@@ -6,6 +6,12 @@ venv/
 .env
 *.log
 
+# --- Python Backend Junk ---
+backend/venv/
+backend/__pycache__/
+**/*.pyc
+EOF
+
 # --- Hyperledger Fabric (Blockchain) ---
 # We do not commit the heavy binaries or the sample repo
 blockchain/fabric-samples/
@@ -25,3 +31,21 @@ dist/
 # --- IDEs ---
 .vscode/
 .idea/
+
+# --- Go Chaincode Junk ---
+blockchain/chaincode-go/vendor/
+blockchain/chaincode-go/bin/
+blockchain/chaincode-go/build/
+*.tar.gz
+
+# --- Fabric Network Junk (Generated Crypto Keys) ---
+blockchain/fabric-samples/test-network/organizations/peerOrganizations/
+blockchain/fabric-samples/test-network/organizations/ordererOrganizations/
+blockchain/fabric-samples/test-network/channel-artifacts/
+blockchain/fabric-samples/test-network/log.txt
+blockchain/fabric-samples/test-network/*.tar.gz
+
+# --- System Junk ---
+.DS_Store
+.vscode/
+EOF
