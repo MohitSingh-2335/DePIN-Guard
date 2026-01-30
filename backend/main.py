@@ -31,22 +31,43 @@ def fabric_ping():
 def fabric_query():
     """
     Query the deployed chaincode using docker exec on peer0.org1
+    TLS ENABLED (mandatory for Fabric)
     """
     result = subprocess.run(
         [
-            "docker", "exec", "-e", "CORE_PEER_LOCALMSPID=Org1MSP",
-            "-e", f"CORE_PEER_MSPCONFIGPATH=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org1.example.com/users/Admin@org1.example.com/msp",
+            "docker", "exec",
+
+            # ---- FABRIC ENV VARIABLES ----
+            "-e", "CORE_PEER_LOCALMSPID=Org1MSP",
+            "-e", "CORE_PEER_TLS_ENABLED=true",
             "-e", "CORE_PEER_ADDRESS=peer0.org1.example.com:7051",
+
+            "-e",
+            "CORE_PEER_MSPCONFIGPATH="
+            "/opt/gopath/src/github.com/hyperledger/fabric/peer/"
+            "crypto/peerOrganizations/org1.example.com/users/"
+            "Admin@org1.example.com/msp",
+
+            "-e",
+            "CORE_PEER_TLS_ROOTCERT_FILE="
+            "/opt/gopath/src/github.com/hyperledger/fabric/peer/"
+            "crypto/peerOrganizations/org1.example.com/peers/"
+            "peer0.org1.example.com/tls/ca.crt",
+
+            # ---- CONTAINER ----
             "peer0.org1.example.com",
+
+            # ---- CHAINCODE QUERY ----
             "peer", "chaincode", "query",
-            "-C", "mychannel",  # channel name
-            "-n", "asset-transfer-basic",  # chaincode name
-            "-c", '{"Args":["GetAllAssets"]}'  # function to call
+            "-C", "mychannel",
+            "-n", "asset-transfer-basic",
+            "-c", '{"Args":["GetAllAssets"]}'
         ],
         capture_output=True,
         text=True
     )
+
     return {
-        "success": True if result.returncode == 0 else False,
+        "success": result.returncode == 0,
         "output": result.stdout if result.stdout else result.stderr
     }
