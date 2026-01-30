@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  ai-service:
+    build: ./ai-service
+    container_name: depin_ai_service
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./ai-service:/app
+    networks:
+      - depin-network
+
+networks:
+  depin-network:
+    driver: bridge
