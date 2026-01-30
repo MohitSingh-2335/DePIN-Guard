@@ -48,4 +48,4 @@ blockchain/fabric-samples/test-network/*.tar.gz
 # --- System Junk ---
 .DS_Store
 .vscode/
-EOF
+EOF__pycache__/
