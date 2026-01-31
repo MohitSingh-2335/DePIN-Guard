@@ -10,11 +10,19 @@ const HistoryPage = () => {
   
   const [historyData, setHistoryData] = useState([]);
 
-  // FETCH REAL DATA
+  // 🔒 SECURE FETCH FUNCTION
   const fetchHistory = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/history');
+      // 2. Fetch with Secret Key
+      const response = await fetch('/api/history', {
+        headers: {
+          'X-API-Key': 'my-secret-depin-key-123', // <--- MUST MATCH PYTHON BACKEND
+          'Content-Type': 'application/json'
+        }
+      });
+
       if (!response.ok) return;
+      
       const data = await response.json();
       
       // Backend returns the full list sorted by newest first
@@ -48,7 +56,7 @@ const HistoryPage = () => {
     const matchesSearch = (item.device && item.device.toLowerCase().includes(searchTerm.toLowerCase())) ||
                           (item.hash && item.hash.toLowerCase().includes(searchTerm.toLowerCase()));
     
-    // Map backend status to filter categories if needed, or keep simple equality
+    // Map backend status to filter categories
     const matchesFilter = filterStatus === 'all' || (item.status && item.status.toLowerCase() === filterStatus);
     return matchesSearch && matchesFilter;
   });
@@ -138,7 +146,6 @@ const HistoryPage = () => {
             >
               Critical ({historyData.filter(i => i.status === 'critical').length})
             </button>
-            {/* Added Normal filter to replace Verified/Pending since backend sends Normal/Critical */}
             <button 
               className={`filter-btn ${filterStatus === 'normal' ? 'active' : ''}`}
               onClick={() => setFilterStatus('normal')}

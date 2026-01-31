@@ -14,10 +14,17 @@ const BlockchainPage = () => {
   const [selectedBlock, setSelectedBlock] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // FETCH REAL DATA
+  // 🔒 SECURE FETCH FUNCTION
   const fetchBlockchainData = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/blockchain');
+      // 2. Fetch with Secret Key
+      const response = await fetch('/api/blockchain', {
+        headers: {
+          'X-API-Key': 'my-secret-depin-key-123', // <--- MUST MATCH PYTHON BACKEND
+          'Content-Type': 'application/json'
+        }
+      });
+
       if (!response.ok) return;
       
       const data = await response.json();

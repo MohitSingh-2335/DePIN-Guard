@@ -15,10 +15,21 @@ const DashboardPage = () => {
   const [chartData, setChartData] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // 🔒 SECURE FETCH FUNCTION
   const fetchRealData = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/dashboard');
-      if (!response.ok) return;
+      // Fetch with the Secret Key (The Password)
+      const response = await fetch('/api/dashboard', {
+        headers: {
+          'X-API-Key': 'my-secret-depin-key-123', 
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        console.error("Auth Error or Network Error");
+        return;
+      }
       
       const data = await response.json();
       

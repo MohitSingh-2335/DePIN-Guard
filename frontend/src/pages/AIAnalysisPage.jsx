@@ -16,7 +16,7 @@ const AIAnalysisPage = () => {
   const [selectedModel, setSelectedModel] = useState('All Models');
   const [loading, setLoading] = useState(false);
 
-  // We keep this list for the Filter Dropdown to work, even if we don't generate fake data
+  // We keep this list for the Filter Dropdown to work
   const aiModels = [
     'Isolation Forest',
     'LSTM Neural Network', 
@@ -25,11 +25,19 @@ const AIAnalysisPage = () => {
     'Autoencoder'
   ];
 
-  // 2. FETCHER: The "Real" replacement for generateAnalysis()
+  // 2. FETCHER: The Secure Replacement
   const fetchRealData = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/ai-analysis');
+      // 2. Fetch with Secret Key
+      const response = await fetch('/api/ai-analysis', {
+        headers: {
+          'X-API-Key': 'my-secret-depin-key-123', // <--- MUST MATCH PYTHON BACKEND
+          'Content-Type': 'application/json'
+        }
+      });
+
       if (!response.ok) return;
+      
       const data = await response.json();
 
       // Update Stats (Preserve the structure)
@@ -41,13 +49,13 @@ const AIAnalysisPage = () => {
 
       // Map Backend Data to the EXACT format your UI expects
       const mappedResults = data.recent_results.map((res, index) => ({
-        id: index, // Backend doesn't send ID yet, so use index or generated ID
+        id: index, // Backend doesn't send ID yet, so use index
         device: res.device,
-        type: res.severity === 'high' ? 'Critical Anomaly' : 'Pattern Alert', // Map severity to a "Type" name
+        type: res.severity === 'high' ? 'Critical Anomaly' : 'Pattern Alert',
         severity: res.severity || 'medium',
         confidence: res.confidence,
         detected: res.timestamp,
-        description: `Abnormal sensor behavior detected on ${res.device}. Value deviation observed.`, // Generic description since backend sends raw data
+        description: `Abnormal sensor behavior detected on ${res.device}. Value deviation observed.`, 
         recommendation: res.recommendation, // The REAL recommendation from Python
         aiModel: 'LSTM Neural Network' // We hardcode the model name for now
       }));
@@ -59,14 +67,14 @@ const AIAnalysisPage = () => {
     }
   };
 
-  // 3. EFFECT: Poll data (Replaces the random interval)
+  // 3. EFFECT: Poll data
   useEffect(() => {
     fetchRealData();
     const interval = setInterval(fetchRealData, 3000); // Check every 3s
     return () => clearInterval(interval);
   }, []);
 
-  // 4. HANDLERS: Keep your friend's exact logic
+  // 4. HANDLERS
   
   // Filter logic
   const filteredResults = selectedModel === 'All Models' 
@@ -77,7 +85,7 @@ const AIAnalysisPage = () => {
     setSelectedModel(e.target.value);
   };
 
-  // "Run Analysis" now forces a refresh from Backend instead of generating fake data
+  // "Run Analysis" now forces a refresh from Backend
   const handleRunAnalysis = () => {
     setLoading(true);
     fetchRealData();
@@ -103,7 +111,7 @@ const AIAnalysisPage = () => {
     setSelectedAnalysis(null);
   };
 
-  // 5. RENDER: 100% IDENTICAL to your friend's JSX
+  // 5. RENDER
   return (
     <Layout>
       <div className="ai-analysis-container">
