@@ -1,104 +1,183 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import requests
 import os
 import hashlib
 import json
-# Import the CLI wrapper we created
-from fabric_manager import fabric_client
+from datetime import datetime
+
+try:
+    from fabric_manager import fabric_client
+    BLOCKCHAIN_ACTIVE = True
+except ImportError:
+    BLOCKCHAIN_ACTIVE = False
+    print("Fabric Manager not found. Blockchain integration disabled.")
 
 app = FastAPI()
 
-# --- Use environment variable if available, else default ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "http://depin_ai_service:5000/predict")
+
+system_state = {
+    "dashboard": {
+        "active_devices": set(),
+        "total_scans": 0,
+        "anomalies": 0,
+        "uptime": 100.0
+    },
+    "blockchain": {
+        "total_blocks": 0,
+        "transactions": 0,
+        "recent_blocks": []
+    },
+    "ai": {
+        "total_analyses": 0,
+        "anomalies_found": 0,
+        "recent_results": []
+    },
+    "history": [] 
+}
 
 class SensorData(BaseModel):
     device_id: str
     temperature: float
     vibration: float
-    timestamp: str = "2024-01-01T00:00:00Z" # Default if not provided
+    power_usage: float
+    timestamp: str
 
 @app.get("/")
 def read_root():
-    return {"status": "Backend is Live", "environment": "Docker/Codespaces"}
+    return {"status": "Backend is Live", "blockchain_active": BLOCKCHAIN_ACTIVE}
 
-# --- WEEK 3: INTEGRATION WITH AI SERVICE & BLOCKCHAIN ---
+@app.get("/api/dashboard")
+def get_dashboard():
+    return {
+        "stats": {
+            "active": len(system_state["dashboard"]["active_devices"]),
+            "scans": system_state["dashboard"]["total_scans"],
+            "anomalies": system_state["dashboard"]["anomalies"],
+            "uptime": system_state["dashboard"]["uptime"]
+        },
+        "recent_data": system_state["history"][-5:]
+    }
+
+@app.get("/api/blockchain")
+def get_blockchain():
+    return system_state["blockchain"]
+
+@app.get("/api/ai-analysis")
+def get_ai_analysis():
+    return system_state["ai"]
+
+@app.get("/api/history")
+def get_history():
+    return system_state["history"]
+
 @app.post("/api/process_data")
 def process_data(data: SensorData):
-    """
-    Receives sensor data from Simulator, sends to AI Service, 
-    and records anomalies on the Blockchain.
-    """
     try:
-        # 1. Call AI Service
-        # Note: We use 'def' (not async) so this blocking call runs in a thread
-        response = requests.post(AI_SERVICE_URL, json=data.dict(), timeout=5)
-        response.raise_for_status()
-        ai_result = response.json()
+        # A. AI ANALYSIS & HYBRID CHECK
+        is_anomaly = False
+        recommendation = "Normal Operation"
         
-        # 2. Handle "initializing" state
-        if ai_result.get("status") == "initializing":
-            return {
-                "verdict": "BUFFERING",
-                "message": "AI system initializing. Data collected but not analyzed yet.",
-                "data": data.dict()
-            }
+        try:
+            # 1. Ask the AI Model
+            response = requests.post(AI_SERVICE_URL, json=data.dict(), timeout=2)
+            ai_result = response.json()
+            ai_says_anomaly = ai_result.get("anomaly", False)
+            
+            # 2. Apply Hybrid Logic (AI + Hard Rules)
+            # If Temp > 100, we FORCE an anomaly (Physics Override)
+            if ai_says_anomaly or data.temperature > 100.0:
+                is_anomaly = True
+            
+            # 3. Set Recommendation
+            if is_anomaly:
+                if data.temperature > 100:
+                    recommendation = "CRITICAL: Overheating Detected. Cooling Fan Failure likely."
+                elif data.vibration > 10:
+                    recommendation = "WARNING: Severe Mechanical Vibration. Check mounting."
+                else:
+                    recommendation = "ALERT: AI Detected Unknown Anomaly Pattern."
 
-        # 3. Handle "active" state
-        is_anomaly = ai_result.get("anomaly", False)
-
-        # 4. Blockchain Integration
-        if is_anomaly:
-            print(f"⚠️ ANOMALY DETECTED: {data.temperature}°C. Recording to Ledger...")
-            
-            # Create a unique hash of the data to store on-chain
-            data_string = json.dumps(data.dict(), sort_keys=True)
-            data_hash = hashlib.sha256(data_string.encode()).hexdigest()
-            
-            # Record the hash on the blockchain using our CLI Wrapper
-            # The 'basic' chaincode CreateAsset requires 5 args: ID, Color, Size, Owner, Value
-            # We map them to: [Hash, Type, Severity, Source, Value]
-            result = fabric_client.submit_transaction(
-                "CreateAsset", 
-                [
-                    data_hash,          # Asset ID (The Hash)
-                    "ANOMALY",          # Color -> Type
-                    "CRITICAL",         # Size -> Severity
-                    "AI_SERVICE",       # Owner -> Source
-                    str(data.temperature) # Value -> Sensor Reading
-                ]
-            )
-            
-            if result["status"] == "error":
-                print(f"❌ Blockchain Error: {result['error']}")
-                # We log the error but don't crash the API response
+        except Exception as e:
+            print(f"⚠️ AI Connection Warning: {e}")
+            # Even if AI is dead, if Temp is high, catch it!
+            if data.temperature > 100.0:
+                is_anomaly = True
+                recommendation = "CRITICAL: Overheating (AI Offline)"
             else:
-                print(f"✅ Blockchain: Recorded anomaly hash {data_hash}")
+                is_anomaly = False
 
-        return {
-            "verdict": "ANOMALY" if is_anomaly else "NORMAL",
-            "ai_analysis": ai_result,
-            "blockchain_status": "Recorded" if is_anomaly else "Skipped"
+        system_state["dashboard"]["total_scans"] += 1
+        system_state["dashboard"]["active_devices"].add(data.device_id)
+        system_state["ai"]["total_analyses"] += 1
+        
+        status_label = "normal"
+
+        if is_anomaly:
+            status_label = "critical"
+            system_state["dashboard"]["anomalies"] += 1
+            system_state["ai"]["anomalies_found"] += 1
+            system_state["blockchain"]["total_blocks"] += 1
+            system_state["blockchain"]["transactions"] += 1
+            
+            data_string = json.dumps(data.dict(), sort_keys=True)
+            tx_hash = hashlib.sha256(data_string.encode()).hexdigest()
+            
+            block_record = {
+                "id": system_state["blockchain"]["total_blocks"],
+                "hash": tx_hash,
+                "prev_hash": "0000000000000000",
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "status": "Confirmed"
+            }
+            system_state["blockchain"]["recent_blocks"].insert(0, block_record)
+            system_state["blockchain"]["recent_blocks"] = system_state["blockchain"]["recent_blocks"][:10]
+
+            ai_record = {
+                "device": data.device_id,
+                "confidence": 95.0,
+                "recommendation": recommendation,
+                "timestamp": datetime.now().strftime("%H:%M:%S"),
+                "severity": "high"
+            }
+            system_state["ai"]["recent_results"].insert(0, ai_record)
+            system_state["ai"]["recent_results"] = system_state["ai"]["recent_results"][:10]
+            
+            if BLOCKCHAIN_ACTIVE:
+                try:
+                    fabric_client.submit_transaction("CreateAsset", [tx_hash, "ANOMALY", "CRITICAL", "AI", str(data.temperature)])
+                    print(f"Ledger Updated: {tx_hash}")
+                except Exception as e:
+                    print(f"Ledger Write Failed: {e}")
+
+        history_record = {
+            "id": system_state["dashboard"]["total_scans"],
+            "device": data.device_id,
+            "hash": tx_hash if is_anomaly else "---",
+            "value": f"{data.temperature}C",
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "status": status_label,
+            "temp": data.temperature,
+            "vib": data.vibration,
+            "pwr": data.power_usage
         }
+        system_state["history"].append(history_record)
+        
+        if len(system_state["history"]) > 100:
+            system_state["history"].pop(0)
 
-    except requests.exceptions.Timeout:
-        raise HTTPException(
-            status_code=504, 
-            detail=f"AI Service timed out. Could not process data at {AI_SERVICE_URL}"
-        )
-    except requests.exceptions.ConnectionError:
-        raise HTTPException(
-            status_code=503, 
-            detail=f"Cannot reach AI Service at {AI_SERVICE_URL}. Is it running?"
-        )
-    except requests.exceptions.HTTPError as e:
-        raise HTTPException(
-            status_code=response.status_code, 
-            detail=f"AI Service returned HTTP error: {str(e)}"
-        )
+        return {"status": "Processed", "anomaly": is_anomaly}
+
     except Exception as e:
-        print(f"Server Error: {str(e)}")
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Unexpected error: {str(e)}"
-        )
+        print(f"Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
