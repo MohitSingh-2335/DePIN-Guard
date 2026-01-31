@@ -1,0 +1,20 @@
+# backend/Dockerfile
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# Install system dependencies (needed for some crypto libraries)
+RUN apt-get update && apt-get install -y gcc libssl-dev
+
+# Copy requirements and install
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the rest of the code
+COPY . .
+
+# Expose the port (FastAPI usually runs on 8000)
+EXPOSE 8000
+
+# Run the app (Adjust 'main:app' if his file is named differently)
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

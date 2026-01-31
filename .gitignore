@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # --- Python (Global) ---
 __pycache__/
 *.py[cod]
@@ -45,7 +44,6 @@ blockchain/fabric-samples/test-network/log.txt
 .idea/
 .DS_Store
 Thumbs.db
-=======
 # Logs
 logs
 *.log
@@ -88,4 +86,3 @@ coverage
 
 # Vite temp files
 *.timestamp-*
->>>>>>> origin/dpin-ui
