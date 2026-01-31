@@ -1,0 +1,5 @@
+.git
+bin
+build
+vendor/github.com
+node_modules

@@ -1,4 +1,46 @@
-venv/
+# --- Python (Global) ---
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.log
 .env
+venv/
+env/
+.venv/
+
+# --- AI Service (CRITICAL: Do not upload models) ---
+*.pth
+*.save
+*.joblib
+*.h5
+ai-service/models/
+
+# --- Backend Junk ---
+backend/venv/
+backend/__pycache__/
+
+# --- Node.js / Frontend ---
+node_modules/
+dist/
+.npm/
+
+# --- Hyperledger Fabric (Blockchain) ---
+# We do not commit the heavy binaries or generated crypto keys
+blockchain/fabric-samples/
+blockchain/install-fabric.sh
+blockchain/chaincode-go/vendor/
+blockchain/chaincode-go/bin/
+blockchain/chaincode-go/build/
+blockchain/fabric-samples/test-network/organizations/
+blockchain/fabric-samples/test-network/channel-artifacts/
+blockchain/fabric-samples/test-network/log.txt
+
+# --- Docker ---
+*.tar
+*.tar.gz
+
+# --- IDEs & System ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
