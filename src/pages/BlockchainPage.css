@@ -1,0 +1,343 @@
+/* ================================
+   BLOCKCHAIN PAGE – RESPONSIVE UI
+================================ */
+
+.blockchain-container {
+  width: 100%;
+}
+
+/* ================================
+   STATS GRID
+================================ */
+
+.blockchain-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2.5rem;
+}
+
+.stat-card-blockchain {
+  background: rgba(17, 24, 39, 0.85);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  transition: 0.3s ease;
+}
+
+.stat-card-blockchain:hover {
+  border-color: var(--primary);
+  transform: translateY(-4px);
+  box-shadow: 0 10px 20px rgba(14,165,233,0.15);
+}
+
+.stat-icon-blockchain {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stat-icon-blockchain svg {
+  width: 26px;
+  height: 26px;
+  color: #fff;
+}
+
+.stat-value-blockchain {
+  font-size: 1.9rem;
+  font-weight: 700;
+}
+
+.stat-label-blockchain {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+/* ================================
+   SYNC BUTTON
+================================ */
+
+.sync-button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  border: none;
+  border-radius: var(--radius-md);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.3s ease;
+}
+
+.sync-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px rgba(139,92,246,0.3);
+}
+
+.sync-button svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+/* ================================
+   BLOCKS SECTION
+================================ */
+
+.blocks-section {
+  background: rgba(17, 24, 39, 0.85);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 2rem;
+}
+
+.blocks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* ================================
+   BLOCK CARD
+================================ */
+
+.block-card {
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  transition: 0.3s ease;
+}
+
+.block-card:hover {
+  border-color: var(--primary);
+  box-shadow: 0 4px 12px rgba(13, 138, 206, 0.1);
+}
+
+.block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.block-height {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.block-height svg {
+  color: var(--primary);
+}
+
+.block-status {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.block-status.confirmed {
+  background: rgba(34,197,94,0.15);
+  color: #22c55e;
+}
+
+/* ================================
+   BLOCK INFO GRID
+================================ */
+
+.block-info-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.info-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.info-value {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.hash-value {
+  font-family: 'JetBrains Mono', monospace;
+  background: rgba(14,165,233,0.12);
+  padding: 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  word-break: break-all;
+  color: var(--primary);
+}
+
+/* ================================
+   VIEW DETAILS BUTTON
+================================ */
+
+.view-details-button {
+  width: 100%;
+  padding: 0.85rem;
+  background: transparent;
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-md);
+  color: var(--primary);
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem; /* Space between text and icon */
+}
+
+.view-details-button:hover {
+  background: var(--primary);
+  color: #fff;
+}
+
+.view-details-button svg {
+  width: 16px;      /* Fixed icon size */
+  height: 16px;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+/* ================================
+   MODAL
+================================ */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 999;
+}
+
+.modal-content {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  max-width: 800px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  padding: 1.25rem;
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-body {
+  padding: 1.25rem;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.detail-row:last-child {
+  border-bottom: none;
+}
+
+.detail-label {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  min-width: 140px;
+}
+
+.detail-value {
+  text-align: right;
+  word-break: break-all;
+}
+
+/* ================================
+   RESPONSIVE BREAKPOINTS
+================================ */
+
+/* Tablets */
+@media (min-width: 640px) {
+  .block-info-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Desktop */
+@media (min-width: 768px) {
+  .block-info-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Mobile */
+@media (max-width: 640px) {
+  .block-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .sync-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .detail-row {
+    flex-direction: column;
+  }
+
+  .detail-value {
+    text-align: left;
+  }
+}
+
+/* Ultra small phones */
+@media (max-width: 360px) {
+  .stat-value-blockchain {
+    font-size: 1.6rem;
+  }
+
+  .view-details-button {
+    padding: 0.7rem;
+    font-size: 0.875rem;
+  }
+
+  .view-details-button svg {
+    width: 14px;
+    height: 14px;
+  }
+}

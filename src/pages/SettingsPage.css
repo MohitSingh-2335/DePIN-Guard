@@ -1,0 +1,360 @@
+/* =====================================
+   SETTINGS PAGE – FULL RESPONSIVE
+===================================== */
+
+.settings-container {
+  width: 100%;
+}
+
+/* =====================================
+   SETTINGS GRID
+===================================== */
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2rem;
+  margin-bottom: 3rem;
+}
+
+/* =====================================
+   SETTINGS CARD
+===================================== */
+
+.settings-card {
+  background: rgba(17, 24, 39, 0.85);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 2rem;
+  transition: 0.3s ease;
+}
+
+.settings-card:hover {
+  border-color: var(--primary);
+  box-shadow: 0 10px 20px rgba(14,165,233,0.1);
+}
+
+/* Card Header */
+
+.card-header {
+  display: flex;
+  gap: 1rem;
+  padding-bottom: 1.5rem;
+  margin-bottom: 2rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.card-icon {
+  width: 48px;
+  height: 48px;
+  background: linear-gradient(135deg, #0ea5e9, #8b5cf6);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.card-icon svg {
+  width: 24px;
+  height: 24px;
+  color: #fff;
+}
+
+.card-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.card-subtitle {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+/* =====================================
+   FORM ELEMENTS
+===================================== */
+
+.form-group {
+  margin-bottom: 1.5rem;
+}
+
+.form-group:last-child {
+  margin-bottom: 0;
+}
+
+.form-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+  display: block;
+}
+
+.form-input,
+.form-select {
+  width: 100%;
+  padding: 0.875rem 1rem;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  transition: 0.2s ease;
+}
+
+.form-input::placeholder {
+  color: var(--text-muted);
+}
+
+.form-input:focus,
+.form-select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(14,165,233,0.1);
+}
+
+.form-select {
+  cursor: pointer;
+}
+
+.form-select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* =====================================
+   TOGGLES
+===================================== */
+
+.toggle-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.toggle-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  transition: 0.2s ease;
+}
+
+.toggle-item:hover {
+  border-color: var(--primary);
+  background: rgba(14,165,233,0.05);
+}
+
+.toggle-info {
+  flex: 1;
+}
+
+.toggle-label {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.25rem;
+}
+
+.toggle-description {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+/* Toggle Switch */
+
+.toggle-switch {
+  position: relative;
+  width: 52px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--border-hover);
+  border-radius: 14px;
+  transition: 0.3s;
+  cursor: pointer;
+}
+
+.toggle-slider::before {
+  content: "";
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  left: 4px;
+  bottom: 4px;
+  background: #fff;
+  border-radius: 50%;
+  transition: 0.3s;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background: linear-gradient(135deg, #0ea5e9, #8b5cf6);
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+  transform: translateX(24px);
+}
+
+/* =====================================
+   SAVE BUTTON
+===================================== */
+
+.save-button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  border: none;
+  border-radius: var(--radius-md);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.3s ease;
+  white-space: nowrap;
+}
+
+.save-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px rgba(34,197,94,0.3);
+}
+
+.save-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.save-button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.save-button.saving {
+  background: var(--border-hover);
+}
+
+/* Spinner */
+
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* =====================================
+   DANGER ZONE
+===================================== */
+
+.danger-zone {
+  margin-top: 2rem;
+  padding: 2rem;
+  background: rgba(239,68,68,0.05);
+  border: 1px solid rgba(239,68,68,0.2);
+  border-radius: var(--radius-lg);
+}
+
+.danger-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #ef4444;
+}
+
+.danger-subtitle {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin-bottom: 1.5rem;
+}
+
+.danger-actions {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.danger-button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.875rem 1.5rem;
+  border: 2px solid #ef4444;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: #ef4444;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.danger-button:hover {
+  background: #ef4444;
+  color: #fff;
+}
+
+.danger-button svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* =====================================
+   RESPONSIVE
+===================================== */
+
+@media (max-width: 640px) {
+  .settings-card {
+    padding: 1.5rem;
+  }
+
+  .card-header {
+    flex-direction: column;
+  }
+
+  .toggle-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .toggle-switch {
+    align-self: flex-end;
+  }
+
+  .save-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .danger-zone {
+    padding: 1.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .settings-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1280px) {
+  .settings-card,
+  .danger-zone {
+    padding: 2.5rem;
+  }
+}

@@ -1,0 +1,375 @@
+/* ===============================
+   AI Analysis Page - Fully Responsive
+================================ */
+
+.ai-analysis-container {
+  max-width: 100%;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+/* ANALYZE BUTTON */
+.analyze-button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  border: none;
+  border-radius: 0.5rem;
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.analyze-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(245,158,11,0.3);
+}
+
+.analyze-button svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+/* STATS GRID */
+.ai-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.ai-stat-card {
+  background: rgba(17,24,39,0.8);
+  backdrop-filter: blur(10px);
+  border: 1px solid #2a2a2a;
+  border-radius: 0.75rem;
+  padding: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  transition: all 0.3s;
+}
+
+.ai-stat-card:hover {
+  border-color: #0ea5e9;
+  transform: translateY(-2px);
+}
+
+.ai-stat-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ai-stat-icon svg {
+  width: 18px;
+  height: 18px;
+  color: white;
+}
+
+.ai-stat-content {
+  flex: 1;
+}
+
+.ai-stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: white;
+}
+
+.ai-stat-label {
+  font-size: 0.8rem;
+  color: #a0aec0;
+  margin-top: 0.25rem;
+}
+
+/* ANALYSIS SECTION */
+.analysis-section {
+  background: rgba(17,24,39,0.85);
+  backdrop-filter: blur(10px);
+  border: 1px solid #2a2a2a;
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+}
+
+.analysis-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+.analysis-card {
+  background: #1f2937;
+  border: 1px solid #2a2a2a;
+  border-radius: 0.75rem;
+  padding: 1rem;
+  transition: all 0.3s;
+}
+
+.analysis-card:hover {
+  border-color: #0ea5e9;
+  box-shadow: 0 4px 12px rgba(14,165,233,0.1);
+}
+
+.analysis-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.analysis-device {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.device-icon-ai {
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, #0ea5e9, #8b5cf6);
+  border-radius: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.device-icon-ai svg {
+  width: 16px;
+  height: 16px;
+  color: white;
+}
+
+.device-name-ai {
+  font-weight: 600;
+  color: white;
+  font-size: 1rem;
+}
+
+.analysis-type {
+  font-size: 0.75rem;
+  color: #a0aec0;
+}
+
+/* SEVERITY BADGE */
+.severity-badge {
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+/* CONFIDENCE BAR */
+.confidence-bar-container {
+  margin: 1rem 0;
+}
+
+.confidence-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: #a0aec0;
+  margin-bottom: 0.25rem;
+}
+
+.confidence-bar {
+  width: 100%;
+  height: 6px;
+  background: #2a2a2a;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.confidence-fill {
+  height: 100%;
+  border-radius: 3px;
+  background-color: #0ea5e9;
+  transition: width 0.3s;
+}
+
+/* DESCRIPTION & META */
+.analysis-description {
+  padding: 0.75rem;
+  background: rgba(14,165,233,0.05);
+  border-left: 3px solid #0ea5e9;
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: white;
+  margin-bottom: 0.5rem;
+}
+
+.analysis-meta {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  font-size: 0.75rem;
+  color: #a0aec0;
+}
+
+.meta-item {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.meta-item svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+/* VIEW RECOMMENDATION BUTTON */
+.view-recommendation-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  width: 100%;
+  padding: 0.75rem;
+  background: transparent;
+  border: 1px solid #0ea5e9;
+  border-radius: 0.5rem;
+  color: #0ea5e9;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.view-recommendation-button:hover {
+  background: #0ea5e9;
+  color: white;
+}
+
+.view-recommendation-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* MODAL */
+.modal-content-ai {
+  background: #1f2937;
+  border: 1px solid #2a2a2a;
+  border-radius: 0.75rem;
+  max-width: 700px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modal-header-ai {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.modal-header-ai h2 {
+  font-size: 1.25rem;
+  color: white;
+}
+
+.modal-close-ai {
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: none;
+  color: #a0aec0;
+  cursor: pointer;
+  border-radius: 0.25rem;
+}
+
+.modal-close-ai:hover {
+  background: #2a2a2a;
+}
+
+.modal-close-ai svg {
+  width: 16px;
+  height: 16px;
+}
+
+.modal-body-ai {
+  padding: 1rem;
+}
+
+/* DETAIL SECTION */
+.detail-section {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.detail-section:last-child {
+  border-bottom: none;
+}
+
+.detail-section h3 {
+  font-size: 1rem;
+  color: #0ea5e9;
+  margin-bottom: 0.5rem;
+}
+
+.detail-section p {
+  color: #a0aec0;
+  line-height: 1.5;
+  margin-bottom: 0.25rem;
+}
+
+.detail-section strong {
+  color: white;
+}
+
+/* RECOMMENDATION BOX */
+.recommendation-box {
+  background: rgba(245,158,11,0.1);
+  border: 1px solid rgba(245,158,11,0.3);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  color: white;
+  line-height: 1.5;
+}
+
+/* ===============================
+   RESPONSIVE BREAKPOINTS
+================================ */
+@media (min-width: 768px) {
+  .analysis-list {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1280px) {
+  .analysis-list {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .analysis-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .analyze-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .ai-stat-card {
+    flex-direction: column;
+    text-align: center;
+  }
+}
