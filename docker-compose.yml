@@ -1,15 +1,66 @@
 version: '3.8'
 
 services:
+  # 1. YOUR AI SERVICE (The Brain)
   ai-service:
     build: ./ai-service
     container_name: depin_ai_service
     ports:
       - "5000:5000"
     volumes:
-      - ./ai-service:/app
+      - ai_models:/app/models
     networks:
       - depin-network
+
+  # 2. BACKEND SERVICE (The Logic)
+  # Updated to mount Blockchain tools from your laptop
+  backend:
+    build: ./backend
+    container_name: depin_backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      # --- CRITICAL: Give Container Access to Host Blockchain Tools ---
+      # 1. Mount the 'peer' binary so Python can run it
+      - ./blockchain/bin:/usr/local/bin
+      # 2. Mount the config files
+      - ./blockchain/config:/etc/hyperledger/fabric/config
+      # 3. Mount the Certificates (MSP) so we have permission to write
+      - ./blockchain/fabric-samples/test-network:/opt/gopath/src/github.com/hyperledger/fabric/peer
+    environment:
+      - AI_SERVICE_URL=http://depin_ai_service:5000/predict
+      # --- FABRIC ENVIRONMENT VARIABLES ---
+      - FABRIC_CFG_PATH=/etc/hyperledger/fabric/config
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_LOCALMSPID=Org1MSP
+      # These paths match where we mounted the folders above (inside /opt/gopath/...)
+      - CORE_PEER_TLS_ROOTCERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/organizations/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/tls/ca.crt
+      - CORE_PEER_MSPCONFIGPATH=/opt/gopath/src/github.com/hyperledger/fabric/peer/organizations/peerOrganizations/org1.example.com/users/Admin@org1.example.com/msp
+      # Important: Talk to the Peer running on the HOST machine (your laptop), not inside the container
+      - CORE_PEER_ADDRESS=host.docker.internal:7051
+    extra_hosts:
+      # This allows the container to resolve "host.docker.internal" to your laptop's IP
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - ai-service
+    networks:
+      - depin-network
+
+  # 3. FRONTEND SERVICE (The Dashboard)
+  frontend:
+    build: ./frontend
+    container_name: depin_frontend
+    ports:
+      - "3000:3000" # Maps container port 3000 to localhost:3000
+      - "5173:5173" # Backup port just in case Vite defaults to it
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    networks:
+      - depin-network
+
+volumes:
+  ai_models:
 
 networks:
   depin-network:
