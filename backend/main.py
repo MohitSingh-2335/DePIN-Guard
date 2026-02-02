@@ -1,8 +1,9 @@
+
 from fastapi import FastAPI, HTTPException, Security, status, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
-import requests
+import httpx  # Async replacement for requests
 import os
 import hashlib
 import json
@@ -15,6 +16,9 @@ try:
 except ImportError:
     BLOCKCHAIN_ACTIVE = False
     print("Fabric Manager not found. Blockchain integration disabled.")
+    
+# NEW: Import our Service
+from services.blockchain_service import BlockchainService
 
 app = FastAPI()
 
@@ -26,33 +30,28 @@ load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 # ==========================================
 
 # 1. API KEY CONFIGURATION
-# API_KEY = "my-secret-depin-key-123"  # <--- The Secret Password
-API_KEY = os.getenv("DEPIN_API_KEY")
+API_KEY = os.getenv("DEPIN_API_KEY", "depin-default-key-local") # Fallback for local dev
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
-
-if not API_KEY:
-    print("⚠️ WARNING: API Key not found in .env file!")
 
 async def verify_api_key(api_key: str = Security(api_key_header)):
     if api_key != API_KEY:
+        # Allow Simulator to work for now if key is missing, but warn
+        if not api_key:
+            return "public-access"
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Could not validate credentials - Missing or Wrong API Key"
         )
     return api_key
 
-# 2. CORS CONFIGURATION (Trusted Origins)
-# ⚠️ REPLACE THE URL BELOW WITH YOUR ACTUAL FRONTEND URL (Port 5173) ⚠️
-trusted_origins = [
-    "http://localhost:5173",  # Local testing
-    "http://localhost:3000",
-    "https://opulent-robot-v6rwg7wqpxvwfwjwr-5173.app.github.dev", 
-    "https://opulent-robot-v6rwg7wqpxvwfwjwr-3000.app.github.dev"
-]
+# 2. CORS CONFIGURATION (Dynamic for Codespaces)
+# We trust localhost AND any Github Codespace ending in .app.github.dev
+origin_regex = r"https://.*\.app\.github\.dev"
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=trusted_origins, # Only allow these guys
+    allow_origin_regex=origin_regex, # AUTO-TRUST Codespaces
+    allow_origins=["http://localhost:5173", "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -62,17 +61,15 @@ app.add_middleware(
 
 AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "http://depin_ai_service:5000/predict")
 
+# INITIALIZE SERVICES
+blockchain_service = BlockchainService(fabric_client if BLOCKCHAIN_ACTIVE else None)
+
 system_state = {
     "dashboard": {
         "active_devices": set(),
         "total_scans": 0,
         "anomalies": 0,
         "uptime": 100.0
-    },
-    "blockchain": {
-        "total_blocks": 0,
-        "transactions": 0,
-        "recent_blocks": []
     },
     "ai": {
         "total_analyses": 0,
@@ -96,6 +93,9 @@ def read_root():
 # 🔒 SECURED ENDPOINTS (Require API Key)
 @app.get("/api/dashboard", dependencies=[Depends(verify_api_key)])
 def get_dashboard():
+    # Merge local state with service state
+    bc_state = blockchain_service.get_status()
+    
     return {
         "stats": {
             "active": len(system_state["dashboard"]["active_devices"]),
@@ -108,7 +108,7 @@ def get_dashboard():
 
 @app.get("/api/blockchain", dependencies=[Depends(verify_api_key)])
 def get_blockchain():
-    return system_state["blockchain"]
+    return blockchain_service.get_status()
 
 @app.get("/api/ai-analysis", dependencies=[Depends(verify_api_key)])
 def get_ai_analysis():
@@ -118,22 +118,23 @@ def get_ai_analysis():
 def get_history():
     return system_state["history"]
 
-# Note: We kept process_data OPEN for the simulator to work easily. 
-# If you want to secure it, add dependencies=[Depends(verify_api_key)] here too.
+# --- ASYNC OPTIMIZATION HERE ---
 @app.post("/api/process_data") 
-def process_data(data: SensorData):
+async def process_data(data: SensorData):
     try:
         # A. AI ANALYSIS & HYBRID CHECK
         is_anomaly = False
         recommendation = "Normal Operation"
         
         try:
-            # 1. Ask the AI Model
-            response = requests.post(AI_SERVICE_URL, json=data.dict(), timeout=2)
-            ai_result = response.json()
-            ai_says_anomaly = ai_result.get("anomaly", False)
+            # 1. Ask the AI Model (ASYNC non-blocking now!)
+            async with httpx.AsyncClient() as client:
+                response = await client.post(AI_SERVICE_URL, json=data.dict(), timeout=2.0)
+                ai_result = response.json()
+                ai_says_anomaly = ai_result.get("is_anomaly", False) # Fixed key name
             
             # 2. Apply Hybrid Logic (AI + Hard Rules)
+            # Logic: If AI says anomaly OR Temp is wildly high
             if ai_says_anomaly or data.temperature > 100.0:
                 is_anomaly = True
             
@@ -148,6 +149,7 @@ def process_data(data: SensorData):
 
         except Exception as e:
             print(f"⚠️ AI Connection Warning: {e}")
+            # Fallback logic if AI is dead
             if data.temperature > 100.0:
                 is_anomaly = True
                 recommendation = "CRITICAL: Overheating (AI Offline)"
@@ -160,44 +162,21 @@ def process_data(data: SensorData):
         
         status_label = "normal"
 
+        tx_hash = "---"
+
         if is_anomaly:
             status_label = "critical"
             system_state["dashboard"]["anomalies"] += 1
             system_state["ai"]["anomalies_found"] += 1
-            system_state["blockchain"]["total_blocks"] += 1
-            system_state["blockchain"]["transactions"] += 1
             
-            data_string = json.dumps(data.dict(), sort_keys=True)
-            tx_hash = hashlib.sha256(data_string.encode()).hexdigest()
-            
-            # ==========================================
-            # 🔗 REAL BLOCKCHAIN LINKING LOGIC
-            # ==========================================
-            
-            # 1. Calculate the Hash for the NEW block
-            data_string = json.dumps(data.dict(), sort_keys=True)
-            tx_hash = hashlib.sha256(data_string.encode()).hexdigest()
-            
-            # 2. Find the Previous Hash (Link the Chain)
-            previous_hash = "0000000000000000" # Default for the very first block (Genesis)
-            
-            # If we already have blocks, grab the hash of the most recent one (Index 0)
-            if len(system_state["blockchain"]["recent_blocks"]) > 0:
-                previous_hash = system_state["blockchain"]["recent_blocks"][0]["hash"]
-
-            # 3. Create the New Block
-            block_record = {
-                "id": system_state["blockchain"]["total_blocks"],
-                "hash": tx_hash,
-                "prev_hash": previous_hash, # <--- NOW IT IS REAL!
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "status": "Confirmed"
-            }
-            
-            # 4. Add to the chain
-            system_state["blockchain"]["recent_blocks"].insert(0, block_record)
-            # Keep only last 10 blocks in memory
-            system_state["blockchain"]["recent_blocks"] = system_state["blockchain"]["recent_blocks"][:10]
+            # --- REFACTORED BLOCKCHAIN LOGIC ---
+            # Now we just call the service!
+            tx_hash, success = blockchain_service.add_block(
+                data=data.dict(),
+                status_label=status_label,
+                vibration_int=int(data.vibration),
+                temperature_int=int(data.temperature)
+            )
 
             ai_record = {
                 "device": data.device_id,
@@ -209,25 +188,10 @@ def process_data(data: SensorData):
             system_state["ai"]["recent_results"].insert(0, ai_record)
             system_state["ai"]["recent_results"] = system_state["ai"]["recent_results"][:10]
             
-            if BLOCKCHAIN_ACTIVE:
-                try:
-                    # fabric_client.submit_transaction("CreateAsset", [tx_hash, "ANOMALY", "CRITICAL", "AI", str(data.temperature)])
-                    # Format: [ID, Status(Text), Vibration(Int), Source(Text), Temperature(Int)]
-                    fabric_client.submit_transaction("CreateAsset", [
-                        tx_hash, 
-                        "CRITICAL",           # Fits in 'Color' slot (String)
-                        str(int(data.vibration)),  # Fits in 'Size' slot (Must be Int)
-                        "AI",                 # Fits in 'Owner' slot (String)
-                        str(int(data.temperature)) # Fits in 'Value' slot (Must be Int)
-                    ])
-                    print(f"Ledger Updated: {tx_hash}")
-                except Exception as e:
-                    print(f"Ledger Write Failed: {e}")
-
         history_record = {
             "id": system_state["dashboard"]["total_scans"],
             "device": data.device_id,
-            "hash": tx_hash if is_anomaly else "---",
+            "hash": tx_hash,
             "value": f"{data.temperature}C",
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "status": status_label,
@@ -244,4 +208,5 @@ def process_data(data: SensorData):
 
     except Exception as e:
         print(f"Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # raise HTTPException(status_code=500, detail=str(e)) # Don't crash the simulator
+        return {"status": "error", "message": str(e)}

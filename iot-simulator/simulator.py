@@ -8,8 +8,13 @@ from datetime import datetime
 BACKEND_URL = "http://localhost:8000/api/process_data"
 DEVICES = ["Device-001", "Device-002", "Device-003", "Device-004", "Device-005"]
 
+import os
+from dotenv import load_dotenv
+
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+
 # 🔒 SECURITY: The Key must match what is in your Backend's .env file
-API_KEY = "Depin_Project_Secret_Key_999"
+API_KEY = os.getenv("DEPIN_API_KEY", "depin-default-key-local")
 
 def generate_sensor_data(device_id):
     """
