@@ -16,12 +16,12 @@ const DashboardPage = () => {
   const [loading, setLoading] = useState(true);
 
   // 🔒 SECURE FETCH FUNCTION
-  const fetchRealData = async () => {
+  const fetchStats = async () => {
     try {
-      // Fetch with the Secret Key (The Password)
       const response = await fetch('/api/dashboard', {
         headers: {
-          'X-API-Key': 'my-secret-depin-key-123', 
+          // KEY MUST MATCH BACKEND .ENV
+          'X-API-Key': 'Depin_Project_Secret_Key_999', 
           'Content-Type': 'application/json'
         }
       });
@@ -48,9 +48,10 @@ const DashboardPage = () => {
     }
   };
 
+  // ✅ FIXED: Using the correct function name 'fetchStats'
   useEffect(() => {
-    fetchRealData();
-    const interval = setInterval(fetchRealData, 2000);
+    fetchStats();
+    const interval = setInterval(fetchStats, 2000);
     return () => clearInterval(interval);
   }, []);
 
@@ -81,7 +82,7 @@ const DashboardPage = () => {
   }, [timePeriod]);
 
   const handleRefresh = () => {
-    fetchRealData();
+    fetchStats(); // ✅ FIXED: Correct function name
     setChartData(generateChartData(timePeriod));
   };
 

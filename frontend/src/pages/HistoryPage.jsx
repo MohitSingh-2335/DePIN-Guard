@@ -16,7 +16,8 @@ const HistoryPage = () => {
       // 2. Fetch with Secret Key
       const response = await fetch('/api/history', {
         headers: {
-          'X-API-Key': 'my-secret-depin-key-123', // <--- MUST MATCH PYTHON BACKEND
+          // ✅ FIXED: Hardcoded to match Backend .env for immediate Demo success
+          'X-API-Key': 'Depin_Project_Secret_Key_999', 
           'Content-Type': 'application/json'
         }
       });

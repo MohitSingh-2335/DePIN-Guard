@@ -20,7 +20,8 @@ const BlockchainPage = () => {
       // 2. Fetch with Secret Key
       const response = await fetch('/api/blockchain', {
         headers: {
-          'X-API-Key': 'my-secret-depin-key-123', // <--- MUST MATCH PYTHON BACKEND
+          // ✅ FIXED: Updated to match your Backend .env
+          'X-API-Key': 'Depin_Project_Secret_Key_999', 
           'Content-Type': 'application/json'
         }
       });

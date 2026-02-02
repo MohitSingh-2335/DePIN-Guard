@@ -8,13 +8,16 @@ from datetime import datetime
 BACKEND_URL = "http://localhost:8000/api/process_data"
 DEVICES = ["Device-001", "Device-002", "Device-003", "Device-004", "Device-005"]
 
+# 🔒 SECURITY: The Key must match what is in your Backend's .env file
+API_KEY = "Depin_Project_Secret_Key_999"
+
 def generate_sensor_data(device_id):
     """
     Generates synthetic IoT data.
     Most of the time it generates 'Normal' data.
-    Sometimes (10% chance) it generates 'Anomaly' data to trigger the AI.
+    Sometimes (25% chance here) it generates 'Anomaly' data to trigger the AI.
     """
-    is_anomaly = random.random() < 0.75  # 10% chance of attack/anomaly
+    is_anomaly = random.random() < 0.25  # Adjusted to 25% for demo purposes
 
     if is_anomaly:
         print(f"⚠️ GENERATING ATTACK for {device_id}!")
@@ -32,7 +35,7 @@ def generate_sensor_data(device_id):
         "device_id": device_id,
         "temperature": temperature,
         "vibration": vibration,
-        "power_usage": power_usage,  # <--- NEW FIELD ADDED
+        "power_usage": power_usage,
         "timestamp": datetime.now().isoformat()
     }
 
@@ -47,13 +50,19 @@ def run_simulator():
                 data = generate_sensor_data(device)
                 
                 try:
-                    # Send data to Backend
-                    response = requests.post(BACKEND_URL, json=data, timeout=2)
+                    # 🔑 AUTHENTICATION: We now send the API Key in the headers!
+                    headers = {
+                        "X-API-Key": API_KEY,
+                        "Content-Type": "application/json"
+                    }
+
+                    # Send data to Backend with Headers
+                    response = requests.post(BACKEND_URL, json=data, headers=headers, timeout=2)
                     
                     if response.status_code == 200:
                         result = response.json()
                         status_icon = "🔴" if result.get("anomaly") else "🟢"
-                        print(f"{status_icon} Sent {device}: {data['temperature']}°C, {data['power_usage']}W -> {response.status_code}")
+                        print(f"{status_icon} Sent {device}: {data['temperature']}°C -> {response.status_code}")
                     else:
                         print(f"❌ Error {response.status_code}: {response.text}")
 

@@ -7,6 +7,7 @@ import os
 import hashlib
 import json
 from datetime import datetime
+from dotenv import load_dotenv
 
 try:
     from fabric_manager import fabric_client
@@ -17,13 +18,20 @@ except ImportError:
 
 app = FastAPI()
 
+# Load the secret .env file
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+
 # ==========================================
 # 🔒 SECURITY SECTION
 # ==========================================
 
 # 1. API KEY CONFIGURATION
-API_KEY = "my-secret-depin-key-123"  # <--- The Secret Password
+# API_KEY = "my-secret-depin-key-123"  # <--- The Secret Password
+API_KEY = os.getenv("DEPIN_API_KEY")
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+if not API_KEY:
+    print("⚠️ WARNING: API Key not found in .env file!")
 
 async def verify_api_key(api_key: str = Security(api_key_header)):
     if api_key != API_KEY:
