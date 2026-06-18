@@ -10,6 +10,7 @@
 [![React](https://img.shields.io/badge/React_18-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
 [![Docker](https://img.shields.io/badge/Docker_Compose-2496ED?style=flat-square&logo=docker&logoColor=white)](https://www.docker.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
+[![Live Demo](https://img.shields.io/badge/Live_Demo-Vercel-black?style=flat-square&logo=vercel&logoColor=white)](https://depin-guard-frontend.vercel.app/)
 
 **Final Year Project · B.Tech CSE · Babu Banarasi Das University · Team of 4**
 
@@ -142,6 +143,10 @@ Industrial IoT deployments face a **"trust deficit"** — thousands of sensors s
 ---
 
 ## 🚀 Quick Start
+
+> **🌐 Live Frontend Demo:** [depin-guard-frontend.vercel.app](https://depin-guard-frontend.vercel.app/)
+
+To run the full stack locally:
 
 ```bash
 git clone https://github.com/MohitSingh-2335/DePIN-Guard.git
