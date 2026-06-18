@@ -574,3 +574,29 @@ section { position: relative; z-index: 1; }
   .lp-cta-banner-title { font-size: 1.25rem; }
   .lp-footer-team      { grid-template-columns: 1fr 1fr; }
 }
+.lp-tech-strip {
+  display: none;
+}
+.lp-footer-links-section {
+  display: flex;
+  gap: 60px;
+  padding: 28px 0;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  margin: 16px 0;
+}
+
+.lp-footer-col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lp-footer-col-title {
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 4px;
+}

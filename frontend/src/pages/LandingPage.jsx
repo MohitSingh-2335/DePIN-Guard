@@ -25,19 +25,6 @@ const INDUSTRIES = [
   { icon: '🏗️', label: 'Structural Monitoring' },
 ];
 
-// Tech stack strip
-const TECH_STACK = [
-  'Hyperledger Fabric', 'FastAPI', 'React', 'PyTorch', 'LSTM', 'GNN', 'MQTT', 'JWT', 'TLS/mTLS', 'WebSocket',
-];
-
-// Team
-const TEAM = [
-  { name: 'Mohit Singh',         role: 'AI/ML Lead' },
-  { name: 'Prateek Kumar Singh', role: 'Security Lead' },
-  { name: 'Priyanshu Sahu',      role: 'Backend & Blockchain' },
-  { name: 'Vineet Singh',        role: 'Frontend & IoT' },
-];
-
 const LandingPage = () => {
   const navigate = useNavigate();
   const [stats, setStats]               = useState({ devices: 0, threats: 0, uptime: 0 });
@@ -187,14 +174,8 @@ const LandingPage = () => {
         </div>
       </section>
 
-      {/* ── TECH STACK STRIP (NEW) ── */}
-      <div className="lp-tech-strip">
-        <div className="lp-tech-track">
-          {[...TECH_STACK, ...TECH_STACK].map((t, i) => (
-            <span key={i} className="lp-tech-pill">{t}</span>
-          ))}
-        </div>
-      </div>
+      {/* ── TECH STACK STRIP — hidden ── */}
+      <div className="lp-tech-strip" style={{ display: 'none' }} />
 
       {/* ── FEATURES ── */}
       <section className="lp-section lp-section-dark" id="features">
@@ -248,7 +229,7 @@ const LandingPage = () => {
         </div>
       </section>
 
-      {/* ── MID CTA BANNER (NEW) ── */}
+      {/* ── MID CTA BANNER ── */}
       <section className="lp-cta-banner lp-fade">
         <div className="lp-cta-banner-inner">
           <h2 className="lp-cta-banner-title">Ready to secure your infrastructure?</h2>
@@ -295,6 +276,8 @@ const LandingPage = () => {
       {/* ── FOOTER ── */}
       <footer className="lp-footer">
         <div className="lp-footer-inner">
+
+          {/* Top row — brand + links */}
           <div className="lp-footer-top">
             <button className="lp-brand" onClick={() => handleNavClick('home')}>
               DePIN<span className="lp-brand-accent">Guard</span>
@@ -306,20 +289,34 @@ const LandingPage = () => {
             </div>
           </div>
 
-          {/* Team section (NEW) */}
-          <div className="lp-footer-team">
-            {TEAM.map((m, i) => (
-              <div key={i} className="lp-footer-member">
-                <span className="lp-footer-member-name">{m.name}</span>
-                <span className="lp-footer-member-role">{m.role}</span>
-              </div>
-            ))}
+          {/* Middle — 3 column links */}
+          <div className="lp-footer-links-section">
+            <div className="lp-footer-col">
+              <h4 className="lp-footer-col-title">Product</h4>
+              <button className="lp-footer-link" onClick={() => handleNavClick('features')}>Features</button>
+              <button className="lp-footer-link" onClick={() => handleNavClick('how')}>How It Works</button>
+              <button className="lp-footer-link" onClick={() => handleNavClick('industries')}>Industries</button>
+            </div>
+            <div className="lp-footer-col">
+              <h4 className="lp-footer-col-title">Resources</h4>
+              <a href="https://github.com/MohitSingh-2335/DePIN-Guard" target="_blank" rel="noreferrer" className="lp-footer-link">GitHub</a>
+              <button className="lp-footer-link">Documentation</button>
+              <button className="lp-footer-link">API Reference</button>
+            </div>
+            <div className="lp-footer-col">
+              <h4 className="lp-footer-col-title">Company</h4>
+              <button className="lp-footer-link" onClick={() => handleNavClick('contact')}>Contact</button>
+              <button className="lp-footer-link">Privacy Policy</button>
+              <button className="lp-footer-link">Terms of Service</button>
+            </div>
           </div>
 
+          {/* Bottom */}
           <div className="lp-footer-bottom">
             <p className="lp-footer-copy">© 2026 DePIN-Guard · BBD University, Lucknow · B.Tech CSE IoT</p>
             <p className="lp-footer-copy">Blockchain • AI • SCADA</p>
           </div>
+
         </div>
       </footer>
 
