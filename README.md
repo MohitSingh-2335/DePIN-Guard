@@ -1,182 +1,99 @@
-<div align="center">
+# DePIN-Guard
 
-# 🛡️ DePIN-Guard
+Real-time Industrial IoT anomaly detection and tamper-proof audit framework using PyTorch LSTM autoencoders and Hyperledger Fabric blockchain.
 
-### Decentralized Physical Infrastructure Network — AI-Powered IIoT Security Framework
+Industrial IoT sensors face data tampering and silent mechanical failures across distributed facilities. DePIN-Guard captures multi-sensor telemetry, flags real-time equipment anomalies using an unsupervised PyTorch LSTM autoencoder, and logs cryptographic audit trails to a Hyperledger Fabric ledger. The model reconstructs normal sensor behavior and flags deviations exceeding an auto-calibrated 95th-percentile MSE threshold of 0.099316.
 
-[![Hyperledger Fabric](https://img.shields.io/badge/Hyperledger_Fabric-2.x-2F3134?style=flat-square&logo=hyperledger&logoColor=white)](https://www.hyperledger.org/projects/fabric)
-[![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?style=flat-square&logo=pytorch&logoColor=white)](https://pytorch.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![React](https://img.shields.io/badge/React_18-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
-[![Docker](https://img.shields.io/badge/Docker_Compose-2496ED?style=flat-square&logo=docker&logoColor=white)](https://www.docker.com/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
-[![Live Demo](https://img.shields.io/badge/Live_Demo-Vercel-black?style=flat-square&logo=vercel&logoColor=white)](https://depin-guard-frontend.vercel.app/)
+**Live Demo:** https://depin-guard-frontend.vercel.app/
 
-**Final Year Project · B.Tech CSE · Babu Banarasi Das University · Team of 4**
+## Verified Results
 
-</div>
+| Metric | Value | Dataset and Size | How It Was Measured | Source File |
+|---|---|---|---|---|
+| Reconstruction Error Threshold | 0.099316 | 10,000 normal synthetic readings | 95th percentile MSE loss on 30-step validation sequences | `ai-service/threshold.txt` |
+| Input Features | 3 channels (temp, vib, power) | 10,000 synthetic readings | Scaled with MinMaxScaler across operational ranges | `ai-service/preprocessing.py` |
+| Autoencoder Latent Dimension | 64 hidden units | 30-timestep sequences | Single-layer LSTM encoder and decoder | `ai-service/model.py` |
+| Sequence Window Length | 30 timesteps | 10,000 normal synthetic readings | Sliding chronological window across sensor stream | `ai-service/train.py` |
+| Training Iterations | 50 epochs | 10,000 rows (lr=0.001) | Adam optimizer minimizing MSE reconstruction loss | `ai-service/train.py` |
+| Ingestion Rate Limit | 60 req / min | Per-client IP stream | SlowAPI rate limiter on sensor ingestion endpoints | `backend/main.py` |
+| Inference API Verification | 35 requests passed (100%) | Synthetic test stream | Validates status 200, boolean flag, and numeric loss | `ai-service/test_integration.py` |
 
----
+## How It Works
 
-## 🔍 The Problem
+1. **Telemetry Generation:** Sensors generate readings (`temperature`, `vibration`, `power_usage`) with 25% synthetic anomaly injection.
+2. **Backend Ingestion:** FastAPI validates payloads via Pydantic, checks API keys, and enforces 60 req/min rate limits.
+3. **AI Inference:** The Flask AI service scales features with MinMaxScaler and computes PyTorch LSTM reconstruction MSE loss.
+4. **Anomaly Evaluation:** Loss exceeding 0.099316 triggers an anomaly flag; if the AI service fails, backend falls back to rule limits (`temp > 100°C` or `vib > 10.0`).
+5. **Ledger & Dashboard:** Verified events generate SHA-256 hashes submitted to Hyperledger Fabric, and WebSocket streams broadcast alerts to React.
 
-Industrial IoT deployments face a **"trust deficit"** — thousands of sensors spread across factories, with no way to verify the data they send is genuine. A single compromised sensor can silently cause equipment failures, safety incidents, or financial fraud while logs show everything is normal.
+An unsupervised LSTM autoencoder was selected over static thresholds because fixed bounds miss equipment-specific rhythmic variations, while autoencoders learn baseline operational dynamics without requiring labelled attack data.
 
-**DePIN-Guard answers two questions:**
-1. *How do you detect when a sensor is sending fake or anomalous data — in real time?*
-2. *How do you prove, permanently and tamper-proof, that it happened?*
+## Features
 
-**Answer: Blockchain + AI.**
+- **Unsupervised Anomaly Detection:** PyTorch LSTM autoencoder reconstructs multi-channel sensor streams and flags deviations exceeding calibrated MSE bounds.
+- **Microservice Architecture:** Decoupled FastAPI backend, Flask AI service, JWT/bcrypt auth service, and React 18 dashboard.
+- **Fail-Safe Fallback:** Heuristic fallback (`temp > 100°C`, `vib > 10.0`) processes telemetry if the AI inference service is unreachable.
+- **Immutable Ledger Logging:** Fabric manager submits SHA-256 anomaly transaction records to Hyperledger Fabric with in-memory simulation fallback.
+- **Real-Time Streaming:** Live WebSocket updates deliver millisecond alerts and telemetry metrics directly to the dashboard.
 
----
+## Tech Stack
 
-## 🏗️ Architecture
+Python, PyTorch, Flask, FastAPI, Pydantic, SlowAPI, APScheduler, Motor (MongoDB), React 18, Vite, Docker, Hyperledger Fabric.
 
-```
-  5 IoT Devices (Simulated · 1 reading/sec · 25% anomaly rate)
-         │
-         ▼
-  ┌─────────────────────────────────┐
-  │    FastAPI Backend (:8000)      │  ← API Key auth · Rate limit 60 req/min
-  │    Pydantic validation          │  ← Input sanitization
-  └────────┬───────────────┬────────┘
-           │               │
-           ▼               ▼
-  ┌──────────────┐  ┌───────────────────┐
-  │  AI Service  │  │ Hyperledger Fabric│
-  │  Flask :5000 │  │  Blockchain Ledger│
-  │              │  │                   │
-  │ LSTM         │  │ Anomaly → Block   │
-  │ Autoencoder  │  │ (tamper-proof)    │
-  └──────┬───────┘  └───────────────────┘
-         │  is_anomaly?
-         ▼
-  ┌──────────────────────┐    every 5 min
-  │  GNN Fraud Detector  │ ◄──────────────── APScheduler
-  │  (Graph Conv. Net)   │  scans blockchain
-  └──────────────────────┘  for collusion patterns
-         │
-         ▼
-  ┌─────────────────────────────────┐
-  │  React Dashboard (:5173)        │  ← Live WebSocket alerts
-  │  Blockchain Explorer            │  ← Block hash chain viewer
-  │  AI Analysis page               │  ← Anomaly confidence scores
-  └─────────────────────────────────┘
-```
-
----
-
-## 🧠 My Role — AI Specialist
-
-> *This was a 4-person team. I owned the entire AI layer.*
-
-### LSTM Autoencoder (Real-Time Anomaly Detection)
-- Built an **LSTM Autoencoder** (PyTorch) trained on **10,000 rows** of normal IoT sensor data
-- Architecture: Encoder → Latent space (dim 64) → Decoder · input features: temperature, vibration, power usage
-- Detection method: **Reconstruction error (MSE)** — if the model can't reconstruct a reading accurately, it's anomalous
-- Threshold auto-calibrated on a validation set and saved to `threshold.txt` — no hardcoding
-- Served as a **Flask microservice** at `/predict` — returns `is_anomaly`, `loss`, and `threshold` per reading
-- Fault-tolerant: backend has `try/except` fallback to threshold rules if AI service goes offline
-
-### GNN Fraud Detector (Systemic Pattern Analysis)
-- Built a **Graph Convolutional Network** (PyTorch Geometric) that runs **every 5 minutes** via APScheduler
-- Fetches full blockchain history → builds a transaction graph → identifies anomaly clusters and collusion rings
-- Catches coordinated fraud that per-sensor LSTM analysis would miss (e.g., multiple sensors compromised by same attacker)
-
-### Why LSTM over a simple threshold?
-> A rule like "alert if temp > 80°C" misses context. A temperature of 75°C might be safe for Device-001 but critical for Device-003. The LSTM learns each device's **temporal rhythm** over a 30-point sliding window and flags anything that breaks that pattern — **no labelled attack data needed** (unsupervised).
-
----
-
-## 📊 Key Metrics
-
-| Metric | Value |
-|--------|-------|
-| Training data size | 10,000 rows of normal sensor data |
-| Devices simulated | 5 (Device-001 to Device-005) |
-| Anomaly injection rate | 25% (every ~4th reading is an attack) |
-| Normal temp range | 20–60°C · Anomaly: 95–120°C |
-| Backend rate limit | 60 requests/minute per IP (SlowAPI) |
-| GNN scan interval | Every 5 minutes (APScheduler) |
-| Auth layers | API Key + JWT + bcrypt + TLS MQTT |
-
----
-
-## ✨ Features
-
-| Feature | What It Does |
-|---------|-------------|
-| 🧠 **LSTM Autoencoder** | Unsupervised real-time anomaly detection via MSE reconstruction error |
-| 🕸️ **GNN Fraud Detection** | Scheduled blockchain graph scan for collusion and coordinated attack patterns |
-| 🔗 **Hyperledger Fabric** | Tamper-proof, cryptographically immutable audit trail for every anomaly event |
-| ⚡ **Live WebSocket Stream** | React dashboard receives alerts the millisecond an anomaly is detected |
-| 🔐 **Defense-in-Depth** | API Key · JWT · Rate limiting · TLS MQTT · Pydantic validation · Audit logging |
-| 🐳 **One-Command Deploy** | Full 4-service stack via `docker-compose up --build` |
-| 🔁 **Fault Tolerance** | AI crash → backend falls back to threshold rules. Fabric unavailable → in-memory chain simulation |
-
----
-
-## 🏗️ Tech Stack
-
-| Layer | Technology | Why |
-|-------|-----------|-----|
-| AI/ML | PyTorch · LSTM Autoencoder · GCN (PyTorch Geometric) | Industry standard, CUDA-ready |
-| Blockchain | Hyperledger Fabric 2.x · Go Chaincode | Permissioned, enterprise-grade, no gas fees |
-| Backend | FastAPI · Python · SlowAPI · APScheduler | Async, auto-docs, background scheduling |
-| AI Service | Flask · Python | Lightweight inference microservice |
-| Frontend | React 18 · Vite · WebSocket | Fast, component-based, real-time |
-| Auth | JWT · bcrypt · API Key | Multi-layer security |
-| IoT | MQTT · TLS (port 8883) · Python Simulator | Industry standard encrypted IoT messaging |
-| Infrastructure | Docker · Docker Compose · SQLite | One-command deployment |
-
----
-
-## 👥 Team Roles
-
-| Member | Role | Responsibilities |
-|--------|------|-----------------|
-| **Mohit** *(me)* | AI Specialist | LSTM Autoencoder, GNN fraud detector, training pipeline, AI microservice |
-| Priyanshu | Backend + Blockchain | FastAPI backend, Hyperledger Fabric, Go chaincode, Docker orchestration |
-| Prateek | Security | Auth service, TLS certificates, rate limiting, penetration testing |
-| Vineet | Frontend + IoT | React dashboard, WebSocket client, IoT simulator |
-
----
-
-## 🚀 Quick Start
-
-> **🌐 Live Frontend Demo:** [depin-guard-frontend.vercel.app](https://depin-guard-frontend.vercel.app/)
-
-To run the full stack locally:
+## Run Locally
 
 ```bash
+# 1. Clone repository
 git clone https://github.com/MohitSingh-2335/DePIN-Guard.git
 cd DePIN-Guard
-docker-compose up --build
+
+# 2. Run AI Inference Service
+cd ai-service
+pip install -r requirements.txt
+python app.py
+
+# 3. Run Frontend Dashboard (in a second terminal)
+cd ../frontend
+npm install
+npm run dev
 ```
 
-| Service | URL |
-|---------|-----|
-| Dashboard | http://localhost:5173 |
-| API + Docs | http://localhost:8000/docs |
-| AI Service | http://localhost:5000 |
+## Tests
+
+The repository contains 3 test files and 2 dedicated test functions:
+- `ai-service/test_api.py`: 2 test functions (`test_predict`, `test_invalid_payload`) checking HTTP 200/400 responses and payload types.
+- `ai-service/test_integration.py`: Integration smoke test sending 35 sequential POST requests to `/predict`.
+- `iot/test_startup.py`: Startup validation script verifying environment variables, dependencies, and CSV parsing.
+
+```bash
+# Run AI inference API tests (requires AI service running on :10000)
+python ai-service/test_api.py
+python ai-service/test_integration.py
+
+# Run IoT ingestor startup test
+python iot/test_startup.py
+```
+
+## Project Structure
+
+- `ai-service/`: PyTorch LSTM autoencoder, GNN prototype, and Flask inference service
+- `auth-service/`: FastAPI authentication microservice with JWT and bcrypt
+- `backend/`: FastAPI application, SlowAPI rate limiting, and Fabric manager
+- `blockchain/`: Hyperledger Fabric network configurations and Go chaincode
+- `docker/`: Container configurations and Mosquitto broker setup
+- `docs/`: Deployment runbooks and implementation security audit
+- `frontend/`: React 18 dashboard with Vite and real-time WebSocket client
+- `iot/`: Sensor data ingestor, simulator, and human-readable formatter
+- `scripts/`: Deployment verification and Docker blockchain initialization
+- `security_scripts/`: Security audit scripts and attack simulation tools
+
+## Limitations
+
+- Mixed authentication model (API key on backend routes vs JWT on submit-data) increases configuration complexity (`docs/Security_Audit.md`).
+- Rate limiting state is memory-bound with SlowAPI and resets on process restart (`docs/Security_Audit.md`).
+- GNN fraud detection scheduled job in backend is currently a pending stub awaiting MongoDB transaction graph pipeline (`backend/main.py`).
+- Online microservice evaluates readings point-by-point (`seq_length=1`) rather than the 30-timestep sliding window used in offline training (`ai-service/app.py`).
 
 ---
 
-## 📂 Project Structure
-
-```
-DePIN-Guard/
-├── ai-service/       # 🧠 LSTM Autoencoder + GNN (Mohit's work)
-├── auth-service/     # JWT + bcrypt authentication microservice
-├── backend/          # FastAPI · WebSocket · APScheduler · SQLite
-├── blockchain/       # Hyperledger Fabric network + Go chaincode
-├── frontend/         # React 18 dashboard · Live charts · Block explorer
-├── iot-simulator/    # 5-device sensor simulator · 25% anomaly injection
-└── docker-compose.yml
-```
-
----
-
-## 📄 License
-
-MIT License — see [LICENSE](LICENSE)
+Mohit Singh | GitHub: https://github.com/MohitSingh-2335 | LinkedIn: https://www.linkedin.com/in/mohit-singh-172548253/ | Portfolio: https://mohitsingh-2335.github.io/
