@@ -653,7 +653,7 @@ async def process_data(request: Request, data: SensorData):
             "status":    "Processed",
             "anomaly":   is_anomaly,
             "ai_source": ai_source,
-            "ai_error":  ai_error,
+            "ai_error":  None,
             "tx_hash":   tx_hash if is_anomaly else None,
         }
 
