@@ -91,7 +91,7 @@ const IoTDashboardView = () => {
             onClick={fetchDevices}
             disabled={loading}
           >
-            {loading ? '⟳ Updating...' : '⟳ Refresh'} Let's also show stats here, first
+            {loading ? 'Updating...' : 'Refresh'}
           </button>
         </div>
 
@@ -104,17 +104,17 @@ const IoTDashboardView = () => {
 
           <div className="iot-stat-card iot-stat-normal">
             <div className="iot-stat-value">{alertCounts.normal}</div>
-            <div className="iot-stat-label">🟢 Normal</div>
+            <div className="iot-stat-label">Normal</div>
           </div>
 
           <div className="iot-stat-card iot-stat-warning">
             <div className="iot-stat-value">{alertCounts.warning}</div>
-            <div className="iot-stat-label">🟡 Warnings</div>
+            <div className="iot-stat-label">Warnings</div>
           </div>
 
           <div className="iot-stat-card iot-stat-critical">
             <div className="iot-stat-value">{alertCounts.critical}</div>
-            <div className="iot-stat-label">🔴 Critical</div>
+            <div className="iot-stat-label">Critical</div>
           </div>
         </div>
 
@@ -157,7 +157,7 @@ const IoTDashboardView = () => {
             </div>
           ) : sortedDevices.length === 0 ? (
             <div className="iot-empty-state">
-              <p>📭 No devices found</p>
+              <p>No devices found</p>
             </div>
           ) : (
             <div className="iot-devices-grid">
