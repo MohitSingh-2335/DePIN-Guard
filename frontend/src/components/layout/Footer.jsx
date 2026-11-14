@@ -145,7 +145,7 @@ const Footer = () => {
             </div>
             {subscribed && (
               <div className="newsletter-success">
-                ✓ Successfully subscribed!
+                Successfully subscribed!
               </div>
             )}
           </form>
@@ -188,7 +188,7 @@ const Footer = () => {
             <a href="#" onClick={(e) => {e.preventDefault(); alert('Cookie Policy');}}>Cookies</a>
           </div>
           <p className="made-with">
-            Made with <span className="heart">❤️</span> by Team IoT
+            DePIN-Guard Industrial IoT Platform
           </p>
         </div>
       </div>
