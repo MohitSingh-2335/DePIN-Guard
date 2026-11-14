@@ -49,13 +49,12 @@ export default function FraudReport() {
 
   const getTypeIcon = (type) => {
     const t = type?.toLowerCase() || '';
-    if (t.includes('cluster'))   return '🔴';
-    if (t.includes('frequency')) return '⚡';
-    if (t.includes('injection')) return '💉';
-    return '⚠️';
+    if (t.includes('cluster'))   return '[Cluster]';
+    if (t.includes('frequency')) return '[Rate]';
+    if (t.includes('injection')) return '[Inject]';
+    return '[Alert]';
   };
 
-  // Filter karo
   const filtered = alerts.filter(a => {
     if (filter === 'resolved')   return resolved.has(a.id);
     if (filter === 'pending')    return !resolved.has(a.id);
@@ -73,10 +72,10 @@ export default function FraudReport() {
     <Layout>
       <div className="fraud-container">
 
-        {/* ── Header ── */}
+        {/* Header */}
         <div className="fraud-header">
           <div>
-            <h1 className="fraud-title">🚨 Fraud Alerts</h1>
+            <h1 className="fraud-title">Fraud Alerts</h1>
             <p className="fraud-subtitle">Real-time AI-detected systemic fraud patterns</p>
             {alerts.length > 0 && (
               <div className="fraud-alert-badge">
@@ -120,10 +119,10 @@ export default function FraudReport() {
             <p>Scanning network for fraud...</p>
           </div>
         ) : error ? (
-          <div className="fraud-error"><p>⚠️ {error}</p></div>
+          <div className="fraud-error"><p>Notice: {error}</p></div>
         ) : alerts.length === 0 ? (
           <div className="fraud-empty">
-            <div className="check-icon">✅</div>
+            <div className="check-icon">[OK]</div>
             <h3>System Secure</h3>
             <p>No suspicious patterns detected in recent blocks.</p>
           </div>
@@ -213,15 +212,13 @@ export default function FraudReport() {
                           </td>
                           <td>
                             <div className="action-btns">
-                              {/* View Details */}
                               <button
                                 className="row-action-btn"
                                 title="View Details"
                                 onClick={() => setSelected(alert)}
                               >
-                                👁️ View
+                                View
                               </button>
-                              {/* Resolve toggle */}
                               <button
                                 className={`row-action-btn ${isResolved ? 'btn-resolved' : 'btn-resolve'}`}
                                 title={isResolved ? 'Mark as Pending' : 'Mark as Resolved'}
@@ -233,7 +230,7 @@ export default function FraudReport() {
                                   });
                                 }}
                               >
-                                {isResolved ? '↩ Undo' : '✅ Resolve'}
+                                {isResolved ? 'Undo' : 'Resolve'}
                               </button>
                             </div>
                           </td>
@@ -301,10 +298,10 @@ export default function FraudReport() {
                   <div className="fraud-modal-section-title">Suggested Action</div>
                   <p>
                     {parseFloat(selectedAlert.confidence) > 0.8
-                      ? '🚨 Immediately isolate the affected node and alert the security team. Do not allow further transactions until investigation is complete.'
+                      ? 'Critical: Immediately isolate the affected node and alert the security team. Do not allow further transactions until investigation is complete.'
                       : parseFloat(selectedAlert.confidence) > 0.6
-                      ? '⚠️ Monitor the node closely for the next 30 minutes. Schedule an inspection if activity continues.'
-                      : '✅ No immediate action needed. Continue monitoring. Flag for review in next routine check.'}
+                      ? 'Warning: Monitor the node closely for the next 30 minutes. Schedule an inspection if activity continues.'
+                      : 'Notice: No immediate action needed. Continue monitoring. Flag for review in next routine check.'}
                   </p>
                 </div>
 
