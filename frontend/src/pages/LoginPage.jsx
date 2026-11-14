@@ -121,7 +121,7 @@ const LoginPage = () => {
           </div>
 
           <form onSubmit={handleSubmit} className="auth-form" noValidate>
-            {error && <div className="error-message"><span>⚠️</span> {error}</div>}
+            {error && <div className="error-message">{error}</div>}
 
             <div className="form-group">
               <label className="form-label">Email Address</label>
@@ -145,7 +145,7 @@ const LoginPage = () => {
                   className={`form-input ${fieldErrors.password ? 'input-error' : ''}`}
                 />
                 <button type="button" className="password-toggle-icon" onClick={() => setShowPassword(!showPassword)}>
-                  {showPassword ? '🙈' : '👁️'}
+                  {showPassword ? 'Hide' : 'Show'}
                 </button>
               </div>
               {fieldErrors.password && <span className="field-error">{fieldErrors.password}</span>}
@@ -159,7 +159,7 @@ const LoginPage = () => {
             </div>
 
             <button type="submit" className="submit-button" disabled={isLoading}>
-              {isLoading ? '🔐 Signing in...' : 'Login to Dashboard →'}
+              {isLoading ? 'Signing in...' : 'Login to Dashboard'}
             </button>
           </form>
 
