@@ -72,7 +72,6 @@ const Layout = ({ children }) => {
   const userName  = localStorage.getItem('userName') || localStorage.getItem('username') || localStorage.getItem('user') || 'Admin User';
   const userEmail = localStorage.getItem('userEmail') || localStorage.getItem('email') || 'admin@iot.com';
 
-  // ✅ TEAM CHECK ADDED
   const isTeamMember = TeamAccessControl.isTeamMember(userEmail);
   const isAdmin = localStorage.getItem("isAdmin") === "true";
 
@@ -81,7 +80,6 @@ const Layout = ({ children }) => {
     const q = searchQuery.toLowerCase().trim();
     if (!q) return;
 
-    // ✅ FILTER ADDED
     const match = SEARCH_PAGES
       .filter(page => page.path !== '/security' || isTeamMember || isAdmin)
       .find(page =>
@@ -146,7 +144,7 @@ const Layout = ({ children }) => {
 
             <div className="search-quick-links">
               {SEARCH_PAGES
-                .filter(page => page.path !== '/security' || isTeamMember || isAdmin) // ✅ FILTER
+                .filter(page => page.path !== '/security' || isTeamMember || isAdmin)
                 .map(page => (
                   <button
                     key={page.path}
