@@ -13,11 +13,24 @@ const getWsUrl = () => {
   return apiUrl.replace('https://', 'wss://').replace('http://', 'ws://') + '/ws/live';
 };
 
-export default function LiveChart({ onConnect }) {
+export default function LiveChart({ onConnect, initialData = [] }) {
   const [data, setData]           = useState([]);
   const [connected, setConnected] = useState(false);
   const [expanded, setExpanded]   = useState(false);
   const wsRef                     = useRef(null);
+
+  useEffect(() => {
+    if (data.length === 0 && initialData && initialData.length > 0) {
+      const mapped = initialData.map(r => ({
+        device_id: r.device,
+        temperature: r.value ?? r.temp,
+        vibration: r.vib,
+        power_usage: r.pwr,
+        is_anomaly: r.status === 'critical' || r.status === 'warning'
+      }));
+      setData(mapped);
+    }
+  }, [initialData]);
 
   useEffect(() => {
     let ws;
