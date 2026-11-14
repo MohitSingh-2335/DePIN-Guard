@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
-═════════════════════════════════════════════════════════════════════════════════
+=================================================================================
     DePIN-Guard Comprehensive Security Attack Test Suite
     
     Tests all security vectors to validate system robustness:
-    ✓ API Security (Input validation, injection attacks, payload manipulation)
-    ✓ Authentication (JWT tampering, expired tokens, weak keys)
-    ✓ Authorization (Unauthorized access, privilege escalation)
-    ✓ Blockchain (Immutability verification, data tampering attempts)
-    ✓ DoS Protection (Rate limiting, payload flooding)
-    ✓ Cryptographic Security (Weak algorithms, key exhaustion)
-    ✓ Data Privacy (Unencrypted data, sensitive info exposure)
+    - API Security (Input validation, injection attacks, payload manipulation)
+    - Authentication (JWT tampering, expired tokens, weak keys)
+    - Authorization (Unauthorized access, privilege escalation)
+    - Blockchain (Immutability verification, data tampering attempts)
+    - DoS Protection (Rate limiting, payload flooding)
+    - Cryptographic Security (Weak algorithms, key exhaustion)
+    - Data Privacy (Unencrypted data, sensitive info exposure)
     
-    Results: ✓ Attack blocked or ❌ Vulnerability found
-═════════════════════════════════════════════════════════════════════════════════
+    Results: [BLOCKED] or [VULNERABLE]
+=================================================================================
 """
 
 import requests
@@ -26,9 +26,9 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Tuple
 import sys
 
-# ═════════════════════════════════════════════════════════════════════════════════
+# =================================================================================
 # CONFIGURATION
-# ═════════════════════════════════════════════════════════════════════════════════
+# =================================================================================
 
 class Config:
     """Attack test configuration"""
@@ -49,9 +49,9 @@ class Config:
     TIMEOUT = 5
 
 
-# ═════════════════════════════════════════════════════════════════════════════════
+# =================================================================================
 # TEST RESULTS TRACKER
-# ═════════════════════════════════════════════════════════════════════════════════
+# =================================================================================
 
 class TestResults:
     """Track and display attack test results"""
@@ -75,21 +75,21 @@ class TestResults:
         
         if passed:
             self.passed += 1
-            print(f"✓ {test_name}: BLOCKED")
+            print(f"[BLOCKED] {test_name}")
         else:
             self.failed += 1
-            print(f"❌ {test_name}: VULNERABLE - {details}")
+            print(f"[VULNERABLE] {test_name}: {details}")
     
     def print_summary(self):
         """Print test summary"""
         duration = (datetime.now() - self.start_time).total_seconds()
         
-        print("\n" + "═" * 80)
+        print("\n" + "=" * 80)
         print("SECURITY AUDIT SUMMARY")
-        print("═" * 80)
+        print("=" * 80)
         print(f"Total Tests: {self.passed + self.failed}")
-        print(f"Passed (Blocked): {self.passed} ✓")
-        print(f"Failed (Vulnerable): {self.failed} ❌")
+        print(f"Passed (Blocked): {self.passed}")
+        print(f"Failed (Vulnerable): {self.failed}")
         print(f"Duration: {duration:.2f}s")
         print(f"Success Rate: {(self.passed / (self.passed + self.failed) * 100):.1f}%")
         
@@ -109,7 +109,7 @@ class TestResults:
             total = stats["passed"] + stats["failed"]
             print(f"  {cat}: {stats['passed']}/{total} passed")
         
-        print("═" * 80 + "\n")
+        print("=" * 80 + "\n")
     
     def export_json(self, filename: str = "security_audit_results.json"):
         """Export results to JSON"""
@@ -132,9 +132,9 @@ class TestResults:
 results = TestResults()
 
 
-# ═════════════════════════════════════════════════════════════════════════════════
+# =================================================================================
 # ATTACK TEST CATEGORIES
-# ═════════════════════════════════════════════════════════════════════════════════
+# =================================================================================
 
 class APISecurityTests:
     """Test API input validation and injection vulnerabilities"""
@@ -908,20 +908,20 @@ class DataPrivacyTests:
             )
 
 
-# ═════════════════════════════════════════════════════════════════════════════════
+# =================================================================================
 # MAIN TEST RUNNER
-# ═════════════════════════════════════════════════════════════════════════════════
+# =================================================================================
 
 def print_header():
     """Print test suite header"""
-    print("\n" + "═" * 80)
+    print("\n" + "=" * 80)
     print("  DePIN-Guard Comprehensive Security Attack Test Suite".center(80))
-    print("═" * 80)
+    print("=" * 80)
     print(f"Backend: {Config.BACKEND_URL}")
     print(f"AI Service: {Config.AI_SERVICE_URL}")
     print(f"Auth Service: {Config.AUTH_SERVICE_URL}")
     print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("═" * 80 + "\n")
+    print("=" * 80 + "\n")
 
 
 def run_all_tests():
@@ -929,18 +929,18 @@ def run_all_tests():
     print_header()
     
     # API Security Tests
-    print("\n" + "─" * 80)
+    print("\n" + "-" * 80)
     print("1. API SECURITY TESTS".ljust(80))
-    print("─" * 80)
+    print("-" * 80)
     APISecurityTests.test_sql_injection()
     APISecurityTests.test_malicious_json()
     APISecurityTests.test_oversized_payload()
     APISecurityTests.test_invalid_data_types()
     
     # Authentication Tests
-    print("\n" + "─" * 80)
+    print("\n" + "-" * 80)
     print("2. AUTHENTICATION TESTS".ljust(80))
-    print("─" * 80)
+    print("-" * 80)
     AuthenticationTests.test_missing_api_key()
     AuthenticationTests.test_invalid_api_key()
     AuthenticationTests.test_jwt_tampering()
@@ -948,37 +948,37 @@ def run_all_tests():
     AuthenticationTests.test_weak_jwt_secret()
     
     # Authorization Tests
-    print("\n" + "─" * 80)
+    print("\n" + "-" * 80)
     print("3. AUTHORIZATION TESTS".ljust(80))
-    print("─" * 80)
+    print("-" * 80)
     AuthorizationTests.test_unauthorized_access()
     AuthorizationTests.test_privilege_escalation()
     
     # DoS Protection Tests
-    print("\n" + "─" * 80)
+    print("\n" + "-" * 80)
     print("4. DOS PROTECTION TESTS".ljust(80))
-    print("─" * 80)
+    print("-" * 80)
     DoSProtectionTests.test_rate_limiting()
     DoSProtectionTests.test_connection_pooling_limit()
     
     # Blockchain Security Tests
-    print("\n" + "─" * 80)
+    print("\n" + "-" * 80)
     print("5. BLOCKCHAIN SECURITY TESTS".ljust(80))
-    print("─" * 80)
+    print("-" * 80)
     BlockchainSecurityTests.test_block_tampering()
     BlockchainSecurityTests.test_consensus_verification()
     
     # Cryptography Tests
-    print("\n" + "─" * 80)
+    print("\n" + "-" * 80)
     print("6. CRYPTOGRAPHY TESTS".ljust(80))
-    print("─" * 80)
+    print("-" * 80)
     CryptographyTests.test_tls_encryption()
     CryptographyTests.test_password_hashing()
     
     # Data Privacy Tests
-    print("\n" + "─" * 80)
+    print("\n" + "-" * 80)
     print("7. DATA PRIVACY TESTS".ljust(80))
-    print("─" * 80)
+    print("-" * 80)
     DataPrivacyTests.test_no_password_in_responses()
     DataPrivacyTests.test_api_key_not_in_logs()
     
@@ -997,18 +997,18 @@ if __name__ == "__main__":
         
         # Exit with appropriate code
         if failed == 0:
-            print("🎉 All security tests passed!")
+            print("All security tests passed.")
             sys.exit(0)
         elif failed <= 3:
-            print(f"⚠️  {failed} vulnerabilities found - review needed")
+            print(f"Warning: {failed} vulnerabilities found - review needed")
             sys.exit(1)
         else:
-            print(f"🚨 {failed} critical vulnerabilities - immediate action required")
+            print(f"Alert: {failed} critical vulnerabilities - immediate action required")
             sys.exit(2)
     
     except KeyboardInterrupt:
-        print("\n\n⏹  Test suite interrupted by user")
+        print("\n\nTest suite interrupted by user")
         sys.exit(130)
     except Exception as e:
-        print(f"\n\n❌ Test suite failed with error: {str(e)}")
+        print(f"\n\nTest suite failed with error: {str(e)}")
         sys.exit(1)
