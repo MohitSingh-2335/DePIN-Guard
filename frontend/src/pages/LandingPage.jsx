@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { BACKEND_URL } from '../utils/api';
 import './LandingPage.css';
 
 const FEATURES = [
-  { icon: '📡', title: 'Real-Time IoT Monitoring', desc: 'Live sensor data — temperature, vibration, pressure, power — streamed instantly to your dashboard.' },
-  { icon: '🔗', title: 'Blockchain Trust Layer', desc: 'Every data event is cryptographically hashed on Hyperledger Fabric. Tamper-proof audit trail guaranteed.' },
-  { icon: '🤖', title: 'Dual AI Engine', desc: 'LSTM detects real-time anomalies. Graph Neural Network catches systemic fraud across the entire ledger.' },
-  { icon: '🛡️', title: 'Enterprise Security', desc: 'JWT + bcrypt + TLS + STRIDE threat modeling — defense in depth at every layer of the stack.' },
+  { tag: 'IoT', title: 'Real-Time IoT Monitoring', desc: 'Live sensor data — temperature, vibration, pressure, power — streamed instantly to your dashboard.' },
+  { tag: 'Fabric', title: 'Blockchain Trust Layer', desc: 'Every data event is cryptographically hashed on Hyperledger Fabric. Tamper-proof audit trail guaranteed.' },
+  { tag: 'AI', title: 'Dual AI Engine', desc: 'LSTM detects real-time anomalies. Graph Neural Network catches systemic fraud across the entire ledger.' },
+  { tag: 'Security', title: 'Enterprise Security', desc: 'JWT + bcrypt + TLS + STRIDE threat modeling — defense in depth at every layer of the stack.' },
 ];
 
 const STEPS = [
@@ -17,12 +18,12 @@ const STEPS = [
 ];
 
 const INDUSTRIES = [
-  { icon: '🏭', label: 'Smart Manufacturing' },
-  { icon: '⚡', label: 'Energy Management' },
-  { icon: '🚚', label: 'Supply Chain' },
-  { icon: '💊', label: 'Pharma Cold Chain' },
-  { icon: '🛢️', label: 'Oil & Gas' },
-  { icon: '🏗️', label: 'Structural Monitoring' },
+  { tag: 'Mfg', label: 'Smart Manufacturing' },
+  { tag: 'Energy', label: 'Energy Management' },
+  { tag: 'Logistics', label: 'Supply Chain' },
+  { tag: 'Pharma', label: 'Pharma Cold Chain' },
+  { tag: 'Energy', label: 'Oil and Gas' },
+  { tag: 'Infra', label: 'Structural Monitoring' },
 ];
 
 const LandingPage = () => {
@@ -33,7 +34,6 @@ const LandingPage = () => {
   const [contactForm, setContactForm]   = useState({ name: '', email: '', message: '' });
   const [contactSent, setContactSent]   = useState(false);
 
-  // Intersection Observer — fade-in on scroll
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('lp-visible'); }),
@@ -47,12 +47,20 @@ const LandingPage = () => {
     const fetchStatsFromAPI = async () => {
       try {
         setLoading(true);
-        const mockData = await new Promise(resolve =>
-          setTimeout(() => resolve({ devices: 5240, threats: 867, uptime: 99.9 }), 1000)
-        );
-        startCounterAnimation(mockData);
-        setLoading(false);
+        const res = await fetch(`${BACKEND_URL}/api/public/stats`);
+        if (res.ok) {
+          const data = await res.json();
+          startCounterAnimation({
+            devices: Number(data.devices) || 0,
+            threats: Number(data.threats) || 0,
+            uptime: Number(data.uptime) || 100.0,
+          });
+        } else {
+          startCounterAnimation({ devices: 0, threats: 0, uptime: 100.0 });
+        }
       } catch {
+        startCounterAnimation({ devices: 0, threats: 0, uptime: 100.0 });
+      } finally {
         setLoading(false);
       }
     };
@@ -92,7 +100,6 @@ const LandingPage = () => {
   return (
     <div className="lp-root" id="home">
 
-      {/* ── BACKGROUND ── */}
       <div className="lp-bg">
         <div className="lp-grid" />
         <div className="lp-orb lp-orb1" />
@@ -100,7 +107,6 @@ const LandingPage = () => {
         <div className="lp-orb lp-orb3" />
       </div>
 
-      {/* ── NAV ── */}
       <nav className="lp-nav">
         <div className="lp-nav-inner">
           <button className="lp-brand" onClick={() => handleNavClick('home')}>
@@ -117,7 +123,7 @@ const LandingPage = () => {
           </div>
           <div className="lp-nav-actions">
             <button className="lp-btn-ghost" onClick={() => navigate('/login')}>Login</button>
-            <button className="lp-btn-primary" onClick={() => navigate('/signup')}>Get Started →</button>
+            <button className="lp-btn-primary" onClick={() => navigate('/signup')}>Get Started</button>
           </div>
           <button className="lp-hamburger" onClick={() => setMenuOpen(!menuOpen)}>
             <span className={menuOpen ? 'open' : ''}/><span className={menuOpen ? 'open' : ''}/><span className={menuOpen ? 'open' : ''}/>
@@ -137,7 +143,6 @@ const LandingPage = () => {
         )}
       </nav>
 
-      {/* ── HERO ── */}
       <section className="lp-hero" id="hero">
         <div className="lp-hero-inner">
           <div className="lp-hero-badge">
@@ -145,11 +150,11 @@ const LandingPage = () => {
           </div>
           <h1 className="lp-hero-title">
             Industrial IoT Security<br />
-            <span className="lp-hero-gradient">Powered by AI &amp; Blockchain</span>
+            <span className="lp-hero-gradient">Powered by AI and Blockchain</span>
           </h1>
           <p className="lp-hero-desc">
-            DePIN-Guard combines real-time LSTM anomaly detection with Hyperledger Fabric's
-            immutable audit trail — giving operators complete trust in their sensor data.
+            DePIN-Guard combines real-time LSTM anomaly detection with Hyperledger Fabric immutable audit trail,
+            providing operators with verifiable trust in sensor data.
           </p>
           <div className="lp-hero-btns">
             <button className="lp-btn-cta" onClick={() => navigate('/signup')}>Start Monitoring Free</button>
@@ -157,27 +162,23 @@ const LandingPage = () => {
           </div>
           <div className="lp-stats">
             <div className="lp-stat">
-              <div className="lp-stat-num">{loading && stats.devices === 0 ? '...' : `${stats.devices.toLocaleString()}+`}</div>
-              <div className="lp-stat-lbl">Devices Active</div>
+              <div className="lp-stat-num">{loading && stats.devices === 0 ? '...' : `${stats.devices.toLocaleString()}`}</div>
+              <div className="lp-stat-lbl">Active Devices</div>
             </div>
             <div className="lp-stat-div" />
             <div className="lp-stat">
               <div className="lp-stat-num">{loading && stats.threats === 0 ? '...' : stats.threats.toLocaleString()}</div>
-              <div className="lp-stat-lbl">Threats Detected</div>
+              <div className="lp-stat-lbl">Threats Flagged</div>
             </div>
             <div className="lp-stat-div" />
             <div className="lp-stat">
               <div className="lp-stat-num">{loading && stats.uptime === 0 ? '...' : `${stats.uptime}%`}</div>
-              <div className="lp-stat-lbl">System Uptime</div>
+              <div className="lp-stat-lbl">Telemetry Health</div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ── TECH STACK STRIP — hidden ── */}
-      <div className="lp-tech-strip" style={{ display: 'none' }} />
-
-      {/* ── FEATURES ── */}
       <section className="lp-section lp-section-dark" id="features">
         <div className="lp-section-inner">
           <div className="lp-section-eyebrow lp-fade">Core Capabilities</div>
@@ -185,7 +186,7 @@ const LandingPage = () => {
           <div className="lp-features-grid">
             {FEATURES.map((f, i) => (
               <div className="lp-feature-card lp-fade" key={i} style={{ transitionDelay: `${i * 80}ms` }}>
-                <div className="lp-feature-icon-wrap">{f.icon}</div>
+                <div className="lp-feature-icon-wrap" style={{ fontWeight: 'bold', fontSize: '13px', color: '#38bdf8' }}>[{f.tag}]</div>
                 <h3 className="lp-feature-title">{f.title}</h3>
                 <p className="lp-feature-desc">{f.desc}</p>
               </div>
@@ -194,7 +195,6 @@ const LandingPage = () => {
         </div>
       </section>
 
-      {/* ── HOW IT WORKS ── */}
       <section className="lp-section" id="how">
         <div className="lp-section-inner">
           <div className="lp-section-eyebrow lp-fade">The Pipeline</div>
@@ -213,7 +213,6 @@ const LandingPage = () => {
         </div>
       </section>
 
-      {/* ── INDUSTRIES ── */}
       <section className="lp-section lp-section-dark" id="industries">
         <div className="lp-section-inner">
           <div className="lp-section-eyebrow lp-fade">Industries</div>
@@ -221,7 +220,7 @@ const LandingPage = () => {
           <div className="lp-industries-grid">
             {INDUSTRIES.map((u, i) => (
               <div className="lp-industry-card lp-fade" key={i} style={{ transitionDelay: `${i * 60}ms` }}>
-                <span className="lp-industry-icon">{u.icon}</span>
+                <span className="lp-industry-icon" style={{ fontWeight: 'bold', fontSize: '13px', color: '#a78bfa' }}>[{u.tag}]</span>
                 <span className="lp-industry-label">{u.label}</span>
               </div>
             ))}
@@ -229,16 +228,14 @@ const LandingPage = () => {
         </div>
       </section>
 
-      {/* ── MID CTA BANNER ── */}
       <section className="lp-cta-banner lp-fade">
         <div className="lp-cta-banner-inner">
           <h2 className="lp-cta-banner-title">Ready to secure your infrastructure?</h2>
           <p className="lp-cta-banner-sub">Join teams monitoring critical IoT networks with DePIN-Guard.</p>
-          <button className="lp-btn-cta" onClick={() => navigate('/signup')}>Get Started Free →</button>
+          <button className="lp-btn-cta" onClick={() => navigate('/signup')}>Get Started Free</button>
         </div>
       </section>
 
-      {/* ── CONTACT ── */}
       <section className="lp-section" id="contact">
         <div className="lp-section-inner lp-contact-inner">
           <div className="lp-section-eyebrow lp-fade">Get In Touch</div>
@@ -246,7 +243,7 @@ const LandingPage = () => {
           <div className="lp-contact-card lp-fade">
             {contactSent ? (
               <div className="lp-contact-success">
-                <div className="lp-success-icon">✅</div>
+                <div className="lp-success-icon" style={{ fontWeight: 'bold', color: '#10b981' }}>[OK]</div>
                 <h3>Transmission Received</h3>
                 <p>Our security team will contact you shortly.</p>
               </div>
@@ -273,11 +270,8 @@ const LandingPage = () => {
         </div>
       </section>
 
-      {/* ── FOOTER ── */}
       <footer className="lp-footer">
         <div className="lp-footer-inner">
-
-          {/* Top row — brand + links */}
           <div className="lp-footer-top">
             <button className="lp-brand" onClick={() => handleNavClick('home')}>
               DePIN<span className="lp-brand-accent">Guard</span>
@@ -289,7 +283,6 @@ const LandingPage = () => {
             </div>
           </div>
 
-          {/* Middle — 3 column links */}
           <div className="lp-footer-links-section">
             <div className="lp-footer-col">
               <h4 className="lp-footer-col-title">Product</h4>
@@ -311,12 +304,10 @@ const LandingPage = () => {
             </div>
           </div>
 
-          {/* Bottom */}
           <div className="lp-footer-bottom">
-            <p className="lp-footer-copy">© 2026 DePIN-Guard · BBD University, Lucknow · B.Tech CSE IoT</p>
-            <p className="lp-footer-copy">Blockchain • AI • SCADA</p>
+            <p className="lp-footer-copy">2026 DePIN-Guard - BBD University, Lucknow - B.Tech CSE IoT</p>
+            <p className="lp-footer-copy">Blockchain - AI - SCADA</p>
           </div>
-
         </div>
       </footer>
 
