@@ -70,10 +70,10 @@ class FabricManager:
         )
 
         if self.peer_executable:
-            print(f"✅ Hyperledger Fabric found at: {self.peer_executable}")
-            print(f"🔗 Peers: {PEER1_ADDRESS} (Manufacturer) | {PEER2_ADDRESS} (Maintenance)")
+            print(f"Hyperledger Fabric found at: {self.peer_executable}")
+            print(f"Peers: {PEER1_ADDRESS} (Manufacturer) | {PEER2_ADDRESS} (Maintenance)")
         else:
-            print("⚠️  'peer' binary not found — running in SIMULATION MODE")
+            print("Hyperledger peer binary not found - running in simulation mode")
 
     def network_status(self) -> Dict[str, Any]:
         checks = {
@@ -92,7 +92,7 @@ class FabricManager:
         }
 
     def submit_transaction(self, function_name: str, args_list: List[str]) -> Dict[str, Any]:
-        print(f"⚡ BLOCKCHAIN: Submitting '{function_name}' with args {args_list}")
+        print(f"Blockchain: Submitting '{function_name}' with args {args_list}")
 
         if not self.peer_executable:
             return {"status": "simulated"}
@@ -103,7 +103,7 @@ class FabricManager:
                 f"Fabric network unreachable — "
                 f"checks={status['checks']} addresses={status['addresses']}"
             )
-            print(f"❌ Transaction skipped: {msg}")
+            print(f"Transaction skipped: {msg}")
             return {"status": "error", "error": msg, "network": status}
 
         cmd_args_json = json.dumps({"Args": [function_name] + args_list})
@@ -112,7 +112,6 @@ class FabricManager:
             command = [
                 self.peer_executable, "chaincode", "invoke",
                 "-o", ORDERER_ADDRESS,
-                # FIX: was "orderer.example.com" — must be the full FQDN from cryptogen
                 "--ordererTLSHostnameOverride", "orderer.orderer.example.com",
                 "--tls", "--cafile", ORDERER_CA,
                 "-C", "mychannel",
@@ -130,7 +129,7 @@ class FabricManager:
             )
 
             if result.returncode == 0:
-                print("✅ Transaction committed successfully")
+                print("Transaction committed successfully")
                 return {"status": "success", "output": result.stdout}
 
             stderr = (result.stderr or "").strip()
@@ -142,23 +141,23 @@ class FabricManager:
                 )
             if "does not exist" in lowered or "not found" in lowered:
                 hint = " — chaincode may not be deployed yet; run deploy_chaincode.sh first"
-            print(f"❌ Transaction failed: {stderr}{hint}")
+            print(f"Transaction failed: {stderr}{hint}")
             return {"status": "error", "error": f"{stderr}{hint}"}
 
         except subprocess.TimeoutExpired:
             msg = "Fabric invoke timed out after 30s"
-            print(f"❌ Timeout: {msg}")
+            print(f"Timeout: {msg}")
             return {"status": "error", "error": msg}
 
         except Exception as exc:
-            print(f"❌ Execution error: {exc}")
+            print(f"Execution error: {exc}")
             return {"status": "error", "error": str(exc)}
 
     def query_transaction(self, function_name: str, arg: str) -> list:
         if not self.peer_executable:
             return []
 
-        print(f"🔍 BLOCKCHAIN: Querying '{function_name}' for '{arg}'")
+        print(f"Blockchain: Querying '{function_name}' for '{arg}'")
         cmd_args_json = json.dumps({"Args": [function_name, arg]})
 
         try:
@@ -171,13 +170,13 @@ class FabricManager:
             result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=15)
             if result.returncode == 0 and result.stdout.strip():
                 return json.loads(result.stdout)
-            print(f"⚠️  Query returned no data: {result.stderr.strip()}")
+            print(f"Query returned no data: {result.stderr.strip()}")
             return []
         except json.JSONDecodeError:
-            print(f"⚠️  Query response is not valid JSON: {result.stdout[:200]}")
+            print(f"Query response is not valid JSON: {result.stdout[:200]}")
             return []
         except Exception as exc:
-            print(f"❌ Query error: {exc}")
+            print(f"Query error: {exc}")
             return []
 
 
