@@ -14,19 +14,19 @@ const IoTAlertCard = ({
 }) => {
   const alertConfig = {
     normal: {
-      icon: '✅',
+      icon: '[OK]',
       borderColor: '#10b981',
       badgeText: 'NORMAL',
       instruction: 'Continue normal operation. No action needed.',
     },
     warning: {
-      icon: '⚠️',
+      icon: '[WARN]',
       borderColor: '#f59e0b',
       badgeText: 'WARNING',
       instruction: 'Monitor closely! Take corrective action if status worsens.',
     },
     critical: {
-      icon: '🚨',
+      icon: '[ALERT]',
       borderColor: '#ef4444',
       badgeText: 'CRITICAL',
       instruction: 'IMMEDIATE ACTION REQUIRED. Stop machine and alert maintenance.',
@@ -46,7 +46,7 @@ const IoTAlertCard = ({
     const concerning = value < min || value > max;
     return {
       category:  concerning ? 'concerning' : 'normal',
-      indicator: concerning ? '⚠' : '✓',
+      indicator: concerning ? '!' : '-',
       label, value, unit,
     };
   };
