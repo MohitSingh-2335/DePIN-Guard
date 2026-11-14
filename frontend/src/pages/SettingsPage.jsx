@@ -167,7 +167,7 @@ export default function SettingsPage() {
       toast.success('Settings saved!');
     } catch {
       setOriginal({ ...settings });
-      toast('Saved locally — sync when backend is online.', { icon: '⚠️' });
+      toast('Saved locally - sync when backend is online.');
     } finally {
       setIsSaving(false);
     }
@@ -235,7 +235,7 @@ export default function SettingsPage() {
         try {
           const parsed = JSON.parse(ev.target.result);
           setSettings(prev => ({ ...prev, ...parsed }));
-          toast('Settings imported — click Save to apply.', { icon: '📥' });
+          toast('Settings imported - click Save to apply.');
         } catch { toast.error('Invalid JSON file.'); }
       };
       reader.readAsText(file);
@@ -324,7 +324,7 @@ export default function SettingsPage() {
               >
                 {isSaving
                   ? <><span className="sp-spinner" />Saving…</>
-                  : hasChanges ? 'Save changes' : 'Saved ✓'
+                  : hasChanges ? 'Save changes' : 'Saved'
                 }
               </button>
             </div>
@@ -344,7 +344,7 @@ export default function SettingsPage() {
                     <p className="sp-avatar-name">{settings.fullName || 'No name set'}</p>
                     <p className="sp-avatar-hint">PNG or JPG, max 2 MB</p>
                     <button className="sp-btn-ghost sp-btn-sm"
-                      onClick={() => toast('Photo upload coming soon!', { icon: '📷' })}>
+                      onClick={() => toast('Photo upload coming soon!')}>
                       Change photo
                     </button>
                   </div>
@@ -353,7 +353,7 @@ export default function SettingsPage() {
                   <Field label="Full name">
                     <input className="sp-input" value={settings.fullName}
                       onChange={e => set('fullName', e.target.value)}
-                      placeholder="e.g. Rahul Sharma" />
+                      placeholder="e.g. Mohit Singh" />
                   </Field>
                   <Field label="Email address">
                     <input className="sp-input" type="email" value={settings.email}
@@ -368,10 +368,10 @@ export default function SettingsPage() {
                   <Field label="Language">
                     <select className="sp-select" value={settings.language}
                       onChange={e => set('language', e.target.value)}>
-                      <option value="en">🇬🇧 English</option>
-                      <option value="hi">🇮🇳 हिन्दी</option>
-                      <option value="es">🇪🇸 Español</option>
-                      <option value="fr">🇫🇷 Français</option>
+                      <option value="en">English</option>
+                      <option value="hi">Hindi</option>
+                      <option value="es">Spanish</option>
+                      <option value="fr">French</option>
                     </select>
                   </Field>
                   <Field label="Bio" hint="optional">
@@ -476,7 +476,7 @@ export default function SettingsPage() {
                       checked={settings[field]}
                       onChange={v => {
                         set(field, v);
-                        toast(v ? `${label} enabled` : `${label} disabled`, { icon: v ? '🔔' : '🔕' });
+                        toast(v ? `${label} enabled` : `${label} disabled`);
                       }}
                     />
                   </div>
@@ -505,7 +505,7 @@ export default function SettingsPage() {
                         checked={settings.alertLevel === opt.value}
                         onChange={() => {
                           set('alertLevel', opt.value);
-                          toast(`Alert level: ${opt.label}`, { icon: '🎚️' });
+                          toast(`Alert level: ${opt.label}`);
                         }}
                       />
                       <div>
@@ -525,7 +525,7 @@ export default function SettingsPage() {
                     checked={settings.alertNotifications}
                     onChange={v => {
                       set('alertNotifications', v);
-                      toast(v ? 'Device alerts enabled' : 'Device alerts muted', { icon: v ? '✅' : '🔇' });
+                      toast(v ? 'Device alerts enabled' : 'Device alerts muted');
                     }}
                   />
                 </div>
@@ -543,22 +543,22 @@ export default function SettingsPage() {
                 </div>
                 <div className="sp-theme-grid">
                   {[
-                    { value: 'dark',  label: 'Dark',   desc: 'Easy on the eyes',  emoji: '🌙' },
-                    { value: 'light', label: 'Light',  desc: 'Clean and bright',   emoji: '☀️' },
-                    { value: 'auto',  label: 'System', desc: 'Follows your OS',    emoji: '🔄' },
+                    { value: 'dark',  label: 'Dark',   desc: 'Easy on the eyes' },
+                    { value: 'light', label: 'Light',  desc: 'Clean and bright' },
+                    { value: 'auto',  label: 'System', desc: 'Follows your OS' },
                   ].map(t => (
                     <button
                       key={t.value}
                       className={`sp-theme-option${settings.theme === t.value ? ' active' : ''}`}
                       onClick={() => {
                         set('theme', t.value);
-                        toast(`Theme: ${t.label}`, { icon: t.emoji });
+                        toast(`Theme: ${t.label}`);
                       }}
                     >
                       <div className={`sp-theme-preview sp-theme-preview--${t.value}`} />
                       <p>{t.label}</p>
                       <span>{t.desc}</span>
-                      {settings.theme === t.value && <span className="sp-theme-check">✓ Active</span>}
+                      {settings.theme === t.value && <span className="sp-theme-check">Active</span>}
                     </button>
                   ))}
                 </div>
@@ -574,7 +574,7 @@ export default function SettingsPage() {
                     <select className="sp-select" value={settings.density}
                       onChange={e => {
                         set('density', e.target.value);
-                        toast(`Density: ${e.target.value}`, { icon: '📐' });
+                        toast(`Density: ${e.target.value}`);
                       }}>
                       <option value="comfortable">Comfortable</option>
                       <option value="compact">Compact</option>
@@ -603,7 +603,7 @@ export default function SettingsPage() {
                     checked={settings.autoRefresh}
                     onChange={v => {
                       set('autoRefresh', v);
-                      toast(v ? 'Auto refresh enabled' : 'Auto refresh disabled', { icon: '🔄' });
+                      toast(v ? 'Auto refresh enabled' : 'Auto refresh disabled');
                     }}
                   />
                 </div>
