@@ -168,16 +168,16 @@ def predict():
     if is_anomaly:
         description = f"Anomaly detected: Temp {temp}°C, Vibration {vib} mm/s, Power {power}W. Loss: {loss:.6f} (Threshold: {THRESHOLD:.6f})"
         if temp > 85:
-            recommendation = "⚠️ High temperature detected. Check cooling system. Consider reducing load."
+            recommendation = "High temperature detected. Check cooling system. Consider reducing load."
         elif vib > 10:
-            recommendation = "⚠️ Excessive vibration. Inspect mechanical components for wear or misalignment."
+            recommendation = "Excessive vibration. Inspect mechanical components for wear or misalignment."
         elif power > 150:
-            recommendation = "⚠️ High power consumption. Check for electrical issues or system overload."
+            recommendation = "High power consumption. Check for electrical issues or system overload."
         else:
-            recommendation = "⚠️ Anomaly pattern detected. Review recent operational changes and sensor calibration."
+            recommendation = "Anomaly pattern detected. Review recent operational changes and sensor calibration."
     else:
-        description = f"Normal operation: Temp {temp}°C, Vibration {vib} mm/s, Power {power}W. All metrics within expected ranges."
-        recommendation = "✅ Continue regular monitoring. No immediate action required."
+        description = f"Normal operation: Temp {temp}C, Vibration {vib} mm/s, Power {power}W. All metrics within expected ranges."
+        recommendation = "Continue regular monitoring. No immediate action required."
 
     logger.info("Inference completed in %.2f ms with loss %.6f (anomaly=%s)", duration_ms, loss, is_anomaly)
 
