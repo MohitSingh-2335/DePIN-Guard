@@ -91,69 +91,42 @@ const DashboardPage = () => {
       if (response && response.ok) {
         const json    = await response.json();
         const history = json.history ?? [];
-        if (history.length === 0) { setChartData([]); return; }
+        if (history.length === 0) return;
 
-        const now = new Date();
-        let buckets = [];
+        // Bucket the actual records chronologically into 10 consistent segments
+        const count = Math.min(history.length, 120);
+        const sample = history.slice(0, count).reverse();
+        const bucketSize = Math.max(1, Math.floor(sample.length / 10));
 
-        if (period === '24h') {
-          buckets = Array.from({ length: 12 }, (_, i) => ({
-            label:  `${i * 2}h`, count: 0, alerts: 0,
-            cutoff: new Date(now - (11 - i) * 2 * 60 * 60 * 1000),
-          }));
-          history.forEach((rec) => {
-            const t = new Date(rec.timestamp);
-            for (let b = buckets.length - 1; b >= 0; b--) {
-              if (t >= buckets[b].cutoff) {
-                buckets[b].count++;
-                if (rec.status === 'critical' || rec.is_anomaly) buckets[b].alerts++;
-                break;
-              }
-            }
+        const buckets = [];
+        for (let i = 0; i < sample.length; i += bucketSize) {
+          const slice = sample.slice(i, i + bucketSize);
+          const alertCount = slice.filter(r => r.anomaly === 1 || r.status === 'critical').length;
+          const firstTime = slice[0]?.timestamp;
+          const timeLabel = firstTime && !isNaN(new Date(firstTime).getTime())
+            ? new Date(firstTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : `Slot ${buckets.length + 1}`;
+
+          buckets.push({
+            label: timeLabel,
+            raw: slice.length,
+            alerts: alertCount,
           });
-        } else if (period === '7d') {
-          buckets = Array.from({ length: 7 }, (_, i) => {
-            const d = new Date(now);
-            d.setDate(d.getDate() - (6 - i));
-            return { label: `Day ${i + 1}`, count: 0, alerts: 0, date: d.toDateString() };
-          });
-          history.forEach((rec) => {
-            const recDate = new Date(rec.timestamp).toDateString();
-            const b = buckets.find(bk => bk.date === recDate);
-            if (b) {
-              b.count++;
-              if (rec.status === 'critical' || rec.is_anomaly) b.alerts++;
-            }
-          });
-        } else {
-          buckets = Array.from({ length: 15 }, (_, i) => ({
-            label:  `D-${14 - i}`, count: 0, alerts: 0,
-            cutoff: new Date(now - (14 - i) * 24 * 60 * 60 * 1000),
-          }));
-          history.forEach((rec) => {
-            const t = new Date(rec.timestamp);
-            for (let b = buckets.length - 1; b >= 0; b--) {
-              if (t >= buckets[b].cutoff) {
-                buckets[b].count++;
-                if (rec.status === 'critical' || rec.is_anomaly) buckets[b].alerts++;
-                break;
-              }
-            }
-          });
+          if (buckets.length >= 10) break;
         }
 
-        const maxRaw = Math.max(...buckets.map(b => b.count), 1);
-        const avg    = buckets.reduce((s, b) => s + b.count, 0) / buckets.length;
+        const maxRaw = Math.max(...buckets.map(b => b.raw), 1);
+        const avg    = buckets.reduce((s, b) => s + b.raw, 0) / buckets.length;
         setChartData(buckets.map(b => ({
           label:  b.label,
-          raw:    b.count,
+          raw:    b.raw,
           alerts: b.alerts,
-          isPeak: b.count === maxRaw && b.count > 0,
-          isHigh: b.count > avg * 1.5,
+          isPeak: b.raw === maxRaw && b.raw > 0,
+          isHigh: b.raw > avg * 1.5,
         })));
       }
     } catch {
-      setChartData([]);
+      // Retain existing chartData on transient error
     }
   };
 
@@ -267,7 +240,7 @@ const DashboardPage = () => {
 
         {/* ── Live Sensor Updates ── */}
         {!streamConnected && <p className="loading-text">Connecting to live updates...</p>}
-        <LiveChart onConnect={() => setStreamConnected(true)} />
+        <LiveChart onConnect={() => setStreamConnected(true)} initialData={recentData} />
 
         {/* ── Recent Sensor Readings ── */}
         <div className="data-section" ref={sensorRef}>
