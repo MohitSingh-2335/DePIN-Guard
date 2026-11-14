@@ -111,7 +111,7 @@ const IoTAlertCard = ({
       {recommendations && recommendations.length > 0 && (
         <div className="iot-recommendations"
              style={{ borderLeftColor: config.borderColor }}>
-          <h4 className="iot-recommendations-title">✓ Recommended Actions:</h4>
+          <h4 className="iot-recommendations-title">Recommended Actions:</h4>
           <ol className="iot-recommendations-list">
             {recommendations.map((rec, idx) => (
               <li key={idx} className="iot-recommendation-item">{rec}</li>
