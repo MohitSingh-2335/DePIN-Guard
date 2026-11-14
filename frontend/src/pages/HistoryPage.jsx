@@ -181,7 +181,7 @@ const HistoryPage = () => {
           )}
         </div>
 
-        {/* 📄 View Details Popup (Point #5) */}
+        {/* View Details Popup */}
         {selectedItem && (
           <div className="modal-overlay" onClick={() => setSelectedItem(null)}>
             <div className="details-modal" onClick={e => e.stopPropagation()}>
