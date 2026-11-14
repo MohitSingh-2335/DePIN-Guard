@@ -1,7 +1,11 @@
 import os
 from datetime import datetime
 from typing import Optional
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
+
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+load_dotenv(os.path.join(ROOT_DIR, ".env"))
 
 try:
     from motor.motor_asyncio import AsyncIOMotorClient as AsyncClient, AsyncIOMotorDatabase as AsyncDatabase
