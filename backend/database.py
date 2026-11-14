@@ -2,8 +2,14 @@ import os
 from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, Field
-from motor.motor_asyncio import AsyncIOMotorClient as AsyncClient, AsyncIOMotorDatabase as AsyncDatabase
-import certifi
+
+try:
+    from motor.motor_asyncio import AsyncIOMotorClient as AsyncClient, AsyncIOMotorDatabase as AsyncDatabase
+    import certifi
+except ImportError:
+    AsyncClient = None
+    AsyncDatabase = None
+    certifi = None
 
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017/depin_guard")
 mongodb_client: Optional[AsyncClient] = None
@@ -12,12 +18,17 @@ db: Optional[AsyncDatabase] = None
 
 async def connect_to_mongo():
     global mongodb_client, db
+    if AsyncClient is None:
+        db = None
+        print("MongoDB driver not installed. Running with local in-memory fallback.")
+        return
+
     try:
         if "mongodb+srv://" in MONGODB_URI:
             mongodb_client = AsyncClient(
                 MONGODB_URI,
                 tls=True,
-                tlsCAFile=certifi.where(),
+                tlsCAFile=certifi.where() if certifi else None,
                 tlsAllowInvalidCertificates=False,
                 retryWrites=True,
                 w="majority",
@@ -192,3 +203,14 @@ async def get_collection_stats():
         return stats
     except Exception:
         return {}
+
+
+async def export_all_data():
+    if db is None:
+        return {"sensor_data": [], "fraud_alerts": []}
+    try:
+        sensors = await db["sensor_data"].find().to_list(length=1000)
+        alerts = await db["fraud_alerts"].find().to_list(length=1000)
+        return {"sensor_data": sensors, "fraud_alerts": alerts}
+    except Exception:
+        return {"sensor_data": [], "fraud_alerts": []}
