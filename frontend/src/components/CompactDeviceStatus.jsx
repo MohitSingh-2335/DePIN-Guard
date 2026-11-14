@@ -20,28 +20,28 @@ const CompactDeviceStatus = ({
     switch (level?.toLowerCase()) {
       case 'normal':
         return {
-          icon: '✅',
+          icon: '',
           color: '#22c55e',
           bgColor: 'rgba(34, 197, 94, 0.1)',
           label: 'NORMAL',
         };
       case 'warning':
         return {
-          icon: '⚠️',
+          icon: '',
           color: '#f59e0b',
           bgColor: 'rgba(245, 158, 11, 0.1)',
           label: 'WARNING',
         };
       case 'critical':
         return {
-          icon: '🚨',
+          icon: '',
           color: '#ef4444',
           bgColor: 'rgba(239, 68, 68, 0.1)',
           label: 'CRITICAL',
         };
       default:
         return {
-          icon: '❓',
+          icon: '',
           color: '#6b7280',
           bgColor: 'rgba(107, 114, 128, 0.1)',
           label: 'UNKNOWN',
@@ -74,7 +74,7 @@ const CompactDeviceStatus = ({
           <span className="cds-device-name">{machine_name}</span>
         </div>
         <div className="cds-status-badge" style={{ backgroundColor: config.bgColor, color: config.color }}>
-          {config.icon} {config.label}
+          {config.label}
         </div>
       </div>
 
@@ -84,25 +84,25 @@ const CompactDeviceStatus = ({
       {/* Metrics Grid */}
       <div className="cds-metrics">
         <div className={`cds-metric ${isTemperatureOk ? 'ok' : 'alert'}`}>
-          <div className="cds-metric-label">🌡️ Temperature</div>
+          <div className="cds-metric-label">Temperature</div>
           <div className="cds-metric-value">{temperature}°C</div>
-          <div className="cds-metric-range">{isTemperatureOk ? '(Normal)' : '(⚠️ Out of range)'}</div>
+          <div className="cds-metric-range">{isTemperatureOk ? '(Normal)' : '(Out of range)'}</div>
         </div>
 
         <div className={`cds-metric ${isVibrationOk ? 'ok' : 'alert'}`}>
-          <div className="cds-metric-label">📳 Vibration</div>
+          <div className="cds-metric-label">Vibration</div>
           <div className="cds-metric-value">{vibration.toFixed(1)} mm/s</div>
-          <div className="cds-metric-range">{isVibrationOk ? '(Normal)' : '(⚠️ Out of range)'}</div>
+          <div className="cds-metric-range">{isVibrationOk ? '(Normal)' : '(Out of range)'}</div>
         </div>
 
         <div className={`cds-metric ${isPowerOk ? 'ok' : 'alert'}`}>
-          <div className="cds-metric-label">⚡ Power</div>
+          <div className="cds-metric-label">Power</div>
           <div className="cds-metric-value">{power_usage.toFixed(1)} kW</div>
-          <div className="cds-metric-range">{isPowerOk ? '(Normal)' : '(⚠️ Out of range)'}</div>
+          <div className="cds-metric-range">{isPowerOk ? '(Normal)' : '(Out of range)'}</div>
         </div>
 
         <div className="cds-metric time">
-          <div className="cds-metric-label">🕐 Last Update</div>
+          <div className="cds-metric-label">Last Update</div>
           <div className="cds-metric-value">{formatTime(timestamp)}</div>
         </div>
       </div>
