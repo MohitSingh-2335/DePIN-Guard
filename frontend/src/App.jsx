@@ -10,9 +10,7 @@ import SettingsPage from './pages/SettingsPage';
 import LandingPage from './pages/LandingPage';
 import FraudReport from './pages/FraudReport';
 import { getStoredToken, clearAuthStorage } from './utils/sessionAuth';
-import { TeamAccessControl } from './utils/TeamAccessControl'; // ✅ ADDED
-
-// ✅ Correct import
+import { TeamAccessControl } from './utils/TeamAccessControl';
 import SecurityPage from './pages/SecurityPage';
 
 // Log environment configuration
