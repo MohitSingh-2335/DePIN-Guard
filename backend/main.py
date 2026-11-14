@@ -485,6 +485,7 @@ async def get_all_history():
 
 
 @app.post("/api/process_data", dependencies=[Depends(verify_api_key)])
+@app.post("/api/process-data", dependencies=[Depends(verify_api_key)])
 @limiter.limit("60/minute")
 async def process_data(request: Request, data: SensorData):
     try:
