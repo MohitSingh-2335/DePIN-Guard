@@ -1,543 +1,240 @@
-import requests
-import time
-import random
-import json
-import csv
-import hmac
 import hashlib
-import ssl
+import hmac
 import os
-import glob
-import re
-import paho.mqtt.client as mqtt
-from datetime import datetime, timedelta
+import random
+import time
+from datetime import datetime, timezone
+import requests
 from dotenv import load_dotenv
-from human_readable_formatter import HumanReadableDataFormatter
 
-load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+# Load central environment configuration from root .env
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+load_dotenv(os.path.join(ROOT_DIR, ".env"))
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/") + "/api/process_data"
-API_KEY     = os.getenv("DEPIN_API_KEY", "")
-SENSOR_SECRET = API_KEY
+API_KEY = os.getenv("DEPIN_API_KEY", "")
+STREAM_DELAY = float(os.getenv("STREAM_DELAY_SECONDS", "1.0"))
+CONTINUOUS_LOOP = os.getenv("CONTINUOUS_LOOP", "true").lower() in ("true", "1", "yes")
 
 if not API_KEY:
-    raise RuntimeError("DEPIN_API_KEY is required for iot-simulator runtime")
+    raise RuntimeError("DEPIN_API_KEY is required in root .env file")
 
-# Initialize human-readable formatter for non-technical users
-FORMATTER = HumanReadableDataFormatter()
+# 33 industrial machines
+DEVICES = [f"Device-{i:03d}" for i in range(33)]
 
-DEVICES     = ["Device-001", "Device-002", "Device-003", "Device-004", "Device-005",
-               "Device-006", "Device-007", "Device-008", "Device-009", "Device-010",
-               "Device-011", "Device-012", "Device-013", "Device-014", "Device-015",
-               "Device-016", "Device-017", "Device-018", "Device-019", "Device-020",
-               "Device-021", "Device-022", "Device-023", "Device-024", "Device-025",
-               "Device-026", "Device-027", "Device-028", "Device-029", "Device-030",
-               "Device-031", "Device-032", "Device-033"]
-NUM_DEVICES = len(DEVICES)
-SIMULATOR_MODE = os.getenv("SIMULATOR_MODE", "synthetic").strip().lower()
-DATA_SOURCE_FILE = os.getenv("SIMULATOR_DATA_FILE", "").strip()
-DEFAULT_REPLAY_FILE = os.path.join(os.path.dirname(__file__), "normal_training_data.csv")
-REAL_DATA_URL = os.getenv("REAL_DATA_URL", "").strip()
-REAL_DATA_ROOT_KEY = os.getenv("REAL_DATA_ROOT_KEY", "").strip()
-
-
-def _is_placeholder_url(url: str) -> bool:
-    if not url:
-        return True
-    lowered = url.lower()
-    placeholder_markers = (
-        "<your-real-api-endpoint>",
-        "%3cyour-real-api-endpoint%3e",
-        "your-real-api-endpoint",
-    )
-    return any(marker in lowered for marker in placeholder_markers)
-
-CA_CERT     = "ca.crt"
-CLIENT_CERT = "client.crt"
-CLIENT_KEY  = "client.key"
-MQTT_BROKER = "localhost"
-MQTT_PORT   = 8883
-MQTT_TOPIC  = "depin/sensors"
-
-_TEMP_ALIASES = (
-    "temperature", "temp", "temperature_c", "temperature_motor", "meantemp", "mean_temp"
-)
-_VIB_ALIASES = (
-    "vibration", "vib", "vibrationmms", "vibrationmms", "vibrationrms", "rmsvibration", "vibrationmm_s"
-)
-_POWER_ALIASES = (
-    "powerusage", "powerconsumptionkw", "powerconsumption", "pwr", "energy_consumption", "energyconsumption", "energy", "consumption"
-)
-_CURRENT_ALIASES = ("current", "currentphaseavg")
-_VOLTAGE_ALIASES = ("voltage",)
-_DEVICE_ALIASES = ("device_id", "device", "machine_id", "machineid", "machine")
-_TIMESTAMP_ALIASES = ("timestamp", "time", "datetime")
+MACHINE_NAMES = {
+    "Device-000": "Injection Molder", "Device-001": "Mixer", "Device-002": "Pick & Place",
+    "Device-003": "Vision System", "Device-004": "Shuttle System", "Device-005": "Labeler",
+    "Device-006": "Automated Screwdriver", "Device-007": "Shrink Wrapper", "Device-008": "Laser Cutter",
+    "Device-009": "CMM", "Device-010": "CNC Lathe", "Device-011": "Dryer", "Device-012": "Valve Controller",
+    "Device-013": "Furnace", "Device-014": "Carton Former", "Device-015": "Hydraulic Press",
+    "Device-016": "Compressor", "Device-017": "AGV", "Device-018": "Robot Arm",
+    "Device-019": "Conveyor Belt", "Device-020": "Forklift", "Device-021": "Press Brake",
+    "Device-022": "Boiler", "Device-023": "Vacuum Packer", "Device-024": "XRay Inspector",
+    "Device-025": "Crane", "Device-026": "3D Printer", "Device-027": "Palletizer",
+    "Device-028": "Grinder", "Device-029": "CNC Mill", "Device-030": "Chiller",
+    "Device-031": "Heat Exchanger", "Device-032": "Pump"
+}
 
 
-def _clean_key(value: str) -> str:
-    return re.sub(r"[^a-z0-9]", "", str(value).strip().lower())
+def sign_payload(payload: dict) -> str:
+    message = f"{payload['device_id']}|{payload['temperature']}|{payload['vibration']}|{payload['power_usage']}|{payload['timestamp']}"
+    return hmac.new(
+        API_KEY.encode("utf-8"),
+        message.encode("utf-8"),
+        hashlib.sha256
+    ).hexdigest()
 
 
-def _row_get_any(row, aliases):
-    normalized_row = {_clean_key(key): row.get(key) for key in row.keys()}
-    for alias in aliases:
-        value = normalized_row.get(_clean_key(alias))
-        if value is not None and str(value).strip() != "":
-            return value
-    return None
+def format_status(device_id: str, temp: float, vib: float, power: float) -> dict:
+    machine_name = MACHINE_NAMES.get(device_id, "Industrial Machine")
+    is_hot = temp > 85.0
+    is_shaking = vib > 8.0
+    is_high_power = power > 100.0
 
-
-def _to_float(value):
-    if value is None:
-        return None
-    text = str(value).strip()
-    if not text:
-        return None
-    try:
-        return float(text)
-    except Exception:
-        return None
-
-
-def generate_sensor_data(device_id):
-    is_anomaly = random.random() < 0.25
-
-    if is_anomaly:
-        temperature = round(random.uniform(95.0, 120.0), 2)
-        vibration   = round(random.uniform(5.0, 15.0), 2)
-        power_usage = round(random.uniform(100.0, 150.0), 2)
+    concerns = sum([is_hot, is_shaking, is_high_power])
+    if concerns >= 2:
+        alert_level = "CRITICAL"
+        short_status = "Machine in critical condition"
+        recommendations = ["Stop machine immediately", "Inspect cooling and motor", "Contact maintenance"]
+    elif concerns == 1:
+        alert_level = "WARNING"
+        short_status = "Machine showing abnormal readings"
+        recommendations = ["Increase monitoring frequency", "Check lubrication", "Log reading"]
     else:
-        temperature = round(random.uniform(20.0, 60.0), 2)
-        vibration   = round(random.uniform(0.1, 2.0), 2)
-        power_usage = round(random.uniform(10.0, 50.0), 2)
+        alert_level = "NORMAL"
+        short_status = "Machine operating within safe parameters"
+        recommendations = ["Continue standard operation"]
 
     return {
-        "device_id":   device_id,
-        "temperature": temperature,
-        "vibration":   vibration,
-        "power_usage": power_usage,
-        "timestamp":   datetime.now().isoformat(),
+        "machine_name": machine_name,
+        "alert_level": alert_level,
+        "status_short": short_status,
+        "recommendations": recommendations
     }
 
 
-def _normalize_payload(row, fallback_device):
-    raw_device = _row_get_any(row, _DEVICE_ALIASES)
-    device_id = str(raw_device).strip() if raw_device is not None else fallback_device
-    raw_timestamp = _row_get_any(row, _TIMESTAMP_ALIASES)
-    normalized_timestamp = datetime.now().isoformat()
+def load_industrial_datasets():
+    path_sensors = os.path.join(ROOT_DIR, "data", "sensor_data.csv")
+    path_plc = os.path.join(ROOT_DIR, "data", "plc_industrial_control_dataset (1).csv")
 
-    if raw_timestamp:
-        try:
-            parsed_timestamp = datetime.fromisoformat(str(raw_timestamp).replace("Z", "+00:00"))
-            if abs((datetime.now(parsed_timestamp.tzinfo) if parsed_timestamp.tzinfo else datetime.now()) - parsed_timestamp) <= timedelta(minutes=10):
-                normalized_timestamp = parsed_timestamp.isoformat()
-        except Exception:
-            normalized_timestamp = datetime.now().isoformat()
-
-    temperature = _to_float(_row_get_any(row, _TEMP_ALIASES))
-    vibration = _to_float(_row_get_any(row, _VIB_ALIASES))
-    power_usage = _to_float(_row_get_any(row, _POWER_ALIASES))
-
-    # Estimate power for datasets that only include electrical current/voltage.
-    if power_usage is None:
-        current_val = _to_float(_row_get_any(row, _CURRENT_ALIASES))
-        voltage_val = _to_float(_row_get_any(row, _VOLTAGE_ALIASES))
-        if current_val is not None and voltage_val is not None:
-            power_usage = (current_val * voltage_val) / 1000.0
-        elif current_val is not None:
-            power_usage = current_val * 10.0
-
-    if temperature is None or vibration is None or power_usage is None:
-        return None
-
-    normalized = {
-        "device_id":   device_id,
-        "temperature": round(float(temperature), 2),
-        "vibration":   round(float(vibration), 2),
-        "power_usage": round(float(power_usage), 2),
-        "timestamp":   normalized_timestamp,
-    }
-    
-    # ENHANCEMENT: Add human-readable fields for non-technical users ✅
-    try:
-        formatted = FORMATTER.format_for_nontechnical_users(
-            device_id=normalized['device_id'],
-            temperature=normalized['temperature'],
-            vibration=normalized['vibration'],
-            power_usage=normalized['power_usage'],
-            timestamp=normalized['timestamp']
-        )
-        # Add non-technical fields to payload
-        normalized['machine_name'] = formatted['machine_name']
-        normalized['alert_level'] = formatted['alert_level']
-        normalized['status_short'] = formatted['status_short']
-        normalized['recommendations'] = formatted['recommendations']
-    except Exception as e:
-        # If formatting fails, skip non-technical fields (still send sensor data)
-        pass
-    
-    return normalized
-
-
-def _resolve_replay_files(file_path):
-    if not file_path:
-        return [DEFAULT_REPLAY_FILE]
-
-    if os.path.isdir(file_path):
-        return sorted(glob.glob(os.path.join(file_path, "*.csv")))
-
-    if "*" in file_path or "?" in file_path:
-        return sorted(glob.glob(file_path))
-
-    if os.path.exists(file_path):
-        return [file_path]
-
-    return []
-
-
-def _load_replay_rows(file_path):
-    import sys
-    replay_rows = []
-    replay_files = _resolve_replay_files(file_path)
-    if not replay_files:
+    if not os.path.exists(path_sensors):
+        print(f"Dataset not found at {path_sensors}. Using synthetic stream.")
         return []
 
-    for replay_file in replay_files:
-        if replay_file.lower().endswith(".csv"):
-            print(f"📂 Loading CSV: {replay_file}", flush=True)
-            with open(replay_file, "r", encoding="utf-8") as csv_file:
-                reader = csv.DictReader(csv_file)
-                row_count = 0
-                for row in reader:
-                    normalized = _normalize_payload(row, random.choice(DEVICES))
-                    if normalized:
-                        replay_rows.append(normalized)
-                    row_count += 1
-                    if row_count % 50000 == 0:
-                        print(f"  ⏳ Loaded {row_count} rows ({len(replay_rows)} valid)...", flush=True)
-                print(f"✅ CSV loaded: {row_count} rows → {len(replay_rows)} normalized", flush=True)
-            continue
-
-        if replay_file.lower().endswith(".json"):
-            print(f"📂 Loading JSON: {replay_file}", flush=True)
-            with open(replay_file, "r", encoding="utf-8") as json_file:
-                payload = json.load(json_file)
-            rows = payload.get("records") if isinstance(payload, dict) else payload
-            for row in rows:
-                if not isinstance(row, dict):
-                    continue
-                normalized = _normalize_payload(row, random.choice(DEVICES))
-                if normalized:
-                    replay_rows.append(normalized)
-            print(f"✅ JSON loaded: {len(rows)} rows → {len(replay_rows)} normalized", flush=True)
-
-    return replay_rows
-
-
-def _extract_online_rows(payload):
-    if isinstance(payload, list):
-        return payload
-
-    if isinstance(payload, dict):
-        # Open-Meteo current weather payload support.
-        current = payload.get("current")
-        if isinstance(current, dict):
-            temp = current.get("temperature_2m")
-            wind = current.get("wind_speed_10m")
-            if temp is not None:
-                temp_val = float(temp)
-                wind_val = float(wind) if wind is not None else 0.0
-                return [{
-                    "device_id": "Weather-Station-001",
-                    "temperature": temp_val,
-                    "vibration": round(max(wind_val / 20.0, 0.05), 2),
-                    "power_usage": round(20.0 + (temp_val * 0.35) + (wind_val * 0.15), 2),
-                    "timestamp": current.get("time") or datetime.now().isoformat(),
-                }]
-
-        if REAL_DATA_ROOT_KEY and isinstance(payload.get(REAL_DATA_ROOT_KEY), list):
-            return payload.get(REAL_DATA_ROOT_KEY)
-
-        for key in ("records", "data", "items", "results"):
-            if isinstance(payload.get(key), list):
-                return payload.get(key)
-
-    return []
-
-
-def _fetch_online_rows():
-    if _is_placeholder_url(REAL_DATA_URL):
-        return []
-
+    print(f"Loading industrial datasets: {path_sensors} and {path_plc}...")
     try:
-        response = requests.get(REAL_DATA_URL, timeout=20)
-        response.raise_for_status()
-        payload = response.json()
-    except Exception as exc:
-        print(f"⚠️ Real-data fetch failed: {exc}")
-        return []
+        import pandas as pd
+        df_sensors = pd.read_csv(path_sensors)
+        pivoted = df_sensors.pivot_table(index="timestamp", columns="sensor", values="value").reset_index()
 
-    rows = _extract_online_rows(payload)
-    return [_normalize_payload(row, random.choice(DEVICES)) for row in rows if isinstance(row, dict)]
-
-
-def _sign_payload(payload):
-    message = f"{payload['device_id']}|{payload['temperature']}|{payload['vibration']}|{payload['power_usage']}|{payload['timestamp']}"
-    payload["signature"] = hmac.new(
-        SENSOR_SECRET.encode("utf-8"),
-        message.encode("utf-8"),
-        hashlib.sha256,
-    ).hexdigest()
-    return payload
-
-
-def run_simulator():
-    print(f"✅ DePIN-Guard IoT Simulator Started (SILENT MODE)")
-    print(f"📡 Sending data to: {BACKEND_URL}")
-    print(f"🔄 Mode: Synthetic | Devices: {len(DEVICES)}")
-    print("⏱️  Running in background... (This is normal - no spam)\n")
-
-    error_count = 0
-    try:
-        while True:
-            for device in DEVICES:
-                data = generate_sensor_data(device)
-                data = _sign_payload(data)
-                try:
-                    headers = {
-                        "X-API-Key": API_KEY,
-                        "Content-Type": "application/json",
-                    }
-                    response = requests.post(BACKEND_URL, json=data, headers=headers, timeout=15)
-                    if response.status_code != 200:
-                        error_count += 1
-                        if error_count == 1:  # Log only first error
-                            print(f"⚠️  Error {response.status_code}: Check backend is running")
-                except requests.exceptions.ConnectionError:
-                    error_count += 1
-                    if error_count == 1:
-                        print("⚠️  Backend not responding - will retry silently")
-                except Exception as e:
-                    error_count += 1
-                    if error_count == 1:
-                        print(f"⚠️  Error: {e}")
-                
-                time.sleep(1)
-            time.sleep(2)
-    except KeyboardInterrupt:
-        print("\n✅ Simulator stopped gracefully.")
-
-
-def run_replay_simulator():
-    import sys
-    replay_file = DATA_SOURCE_FILE or DEFAULT_REPLAY_FILE
-    
-    print(f"✅ DePIN-Guard IoT Replay Simulator Starting...", flush=True)
-    print(f"📡 Backend: {BACKEND_URL}", flush=True)
-    
-    rows = _load_replay_rows(replay_file)
-
-    if not rows:
-        if DATA_SOURCE_FILE:
-            print(f"❌ No replay data found at {replay_file}.")
-            print("Provide a valid external CSV/JSON file in SIMULATOR_DATA_FILE and retry.")
-            return
-
-        print(f"⚠️  No replay data found at {replay_file}; falling back to synthetic mode.")
-        run_simulator()
-        return
-
-    print(f"✅ DePIN-Guard IoT Replay Simulator Started (DEBUG MODE)")
-    print(f"📁 Replaying data from: {replay_file}")
-    print(f"📡 Sending to: {BACKEND_URL}")
-    print(f"📊 Rows loaded: {len(rows)}")
-    print(f"🔄 Simulating {NUM_DEVICES} devices (33 records/second)")
-    print("⏱️  Starting to send data...\n", flush=True)
-
-    error_count = 0
-    success_count = 0
-    sent_count = 0
-    first_record = True
-    try:
-        while True:
-            for data in rows:
-                try:
-                    data = _sign_payload(dict(data))
-                    headers = {
-                        "X-API-Key": API_KEY,
-                        "Content-Type": "application/json",
-                    }
-                    response = requests.post(BACKEND_URL, json=data, headers=headers, timeout=30)
-                    sent_count += 1
-                    
-                    if response.status_code == 200:
-                        success_count += 1
-                        if first_record:
-                            print(f"🚀 First record sent successfully! Data flowing now...", flush=True)
-                            first_record = False
-                    else:
-                        error_count += 1
-                        if error_count == 1:  # Log only first error
-                            print(f"⚠️  Error {response.status_code}: Check backend is running", flush=True)
-                    
-                    # Show progress every 10 records for real-time feedback
-                    if sent_count % 10 == 0:
-                        print(f"✅ Sent {sent_count} | Success: {success_count} | Errors: {error_count}", flush=True)
-                        
-                except requests.exceptions.Timeout:
-                    error_count += 1
-                    if error_count == 1:
-                        print("⚠️  Backend timeout - will retry silently (increase timeout)", flush=True)
-                except requests.exceptions.ConnectionError:
-                    error_count += 1
-                    if error_count == 1:
-                        print("⚠️  Backend not responding - will retry silently", flush=True)
-                except Exception as e:
-                    error_count += 1
-                    if error_count == 1:
-                        print(f"⚠️  Error: {e}", flush=True)
-                
-                time.sleep(1.0 / NUM_DEVICES)  # Throttle to 33 devices per second
-            print(f"\n✅ Completed one full cycle of {len(rows)} rows - looping...", flush=True)
-            print(f"📊 Total sent: {sent_count} | Success rate: {(success_count/sent_count*100):.1f}%\n", flush=True)
-            sent_count = 0
-            success_count = 0
-            error_count = 0
-    except KeyboardInterrupt:
-        print("\n✅ Simulator stopped gracefully.")
-
-
-def run_online_simulator():
-    if _is_placeholder_url(REAL_DATA_URL):
-        print("❌ REAL_DATA_URL is not configured.")
-        print("Set REAL_DATA_URL in .env or run replay mode.")
-        run_replay_simulator()
-        return
-
-    print(f"✅ DePIN-Guard IoT Online Simulator Started (SILENT MODE)")
-    print(f"📡 Source: {REAL_DATA_URL}")
-    print(f"📤 Sending to: {BACKEND_URL}")
-    print("⏱️  Running in background... (This is normal - no spam)\n")
-
-    error_count = 0
-    try:
-        while True:
-            rows = _fetch_online_rows()
-            if not rows:
-                time.sleep(5)
-                continue
-
-            for data in rows:
-                try:
-                    data["timestamp"] = datetime.now().isoformat()
-                    data = _sign_payload(dict(data))
-                    headers = {
-                        "X-API-Key": API_KEY,
-                        "Content-Type": "application/json",
-                    }
-                    response = requests.post(BACKEND_URL, json=data, headers=headers, timeout=15)
-                    if response.status_code != 200:
-                        error_count += 1
-                        if error_count == 1:
-                            print(f"⚠️  Error {response.status_code}: Check backend")
-                except requests.exceptions.ConnectionError:
-                    error_count += 1
-                    if error_count == 1:
-                        print("⚠️  Backend not responding - retrying silently")
-                except Exception as exc:
-                    error_count += 1
-                    if error_count == 1:
-                        print(f"⚠️  Error: {exc}")
-                time.sleep(1)
-
-            time.sleep(5)
-    except KeyboardInterrupt:
-        print("\n✅ Simulator stopped gracefully.")
-
-
-def run_secure_simulator():
-    print(f"✅ DePIN-Guard Secure IoT Simulator Started (SILENT MODE)")
-    print(f"🔒 MQTT Broker: {MQTT_BROKER}:{MQTT_PORT} (TLS)")
-
-    client = mqtt.Client(client_id="DePIN-Simulator-001")
-
-    try:
-        client.tls_set(
-            ca_certs=CA_CERT,
-            certfile=CLIENT_CERT,
-            keyfile=CLIENT_KEY,
-            tls_version=ssl.PROTOCOL_TLSv1_2,
-        )
-    except Exception as e:
-        print(f"❌ TLS setup failed: {e}")
-        run_simulator()
-        return
-
-    def on_connect(client, userdata, flags, rc):
-        if rc == 0:
-            print(f"✅ Connected to MQTT Broker")
+        if "is_anomaly" in df_sensors.columns:
+            anom = df_sensors.groupby("timestamp")["is_anomaly"].max().reset_index()
+            pivoted["is_anomaly"] = anom["is_anomaly"]
         else:
-            print(f"❌ Connection failed (code {rc})")
+            pivoted["is_anomaly"] = 0
 
-    client.on_connect = on_connect
+        # Load second dataset (PLC industrial control) if present
+        df_plc = None
+        if os.path.exists(path_plc):
+            df_plc = pd.read_csv(path_plc, nrows=len(pivoted))
+
+        records = []
+        for i, row in pivoted.iterrows():
+            temp = round(float(row.get("Temperature", 25.0)), 2)
+            vib = round(float(row.get("Vibration", 0.5)), 2)
+            power = round(float(row.get("Energy_Consumption", 0.3)) * 100.0, 2)
+            anom_flag = int(row.get("is_anomaly", 0))
+
+            plc_pressure = 0.0
+            plc_valve = "NORMAL"
+            plc_estop = False
+
+            if df_plc is not None and i < len(df_plc):
+                plc_pressure = round(float(df_plc.iloc[i].get("hydraulic_pressure", 0.0)), 2)
+                plc_valve = str(df_plc.iloc[i].get("valve_status", "NORMAL"))
+                plc_estop = bool(df_plc.iloc[i].get("emergency_stop", False))
+
+            records.append({
+                "temperature": temp,
+                "vibration": vib,
+                "power_usage": power,
+                "pressure": plc_pressure,
+                "valve_status": plc_valve,
+                "emergency_stop": plc_estop,
+                "ground_truth_anomaly": anom_flag
+            })
+
+        print(f"Successfully loaded and fused {len(records)} records from both datasets.")
+        return records
+    except Exception as exc:
+        print(f"Error loading datasets ({exc}). Falling back to synthetic stream.")
+        return []
+
+
+def generate_synthetic_record():
+    is_anomaly = random.random() < 0.20
+    if is_anomaly:
+        temp = round(random.uniform(90.0, 120.0), 2)
+        vib = round(random.uniform(5.0, 15.0), 2)
+        power = round(random.uniform(100.0, 150.0), 2)
+    else:
+        temp = round(random.uniform(20.0, 60.0), 2)
+        vib = round(random.uniform(0.1, 2.0), 2)
+        power = round(random.uniform(10.0, 50.0), 2)
+
+    return {
+        "temperature": temp,
+        "vibration": vib,
+        "power_usage": power,
+        "pressure": round(random.uniform(1.0, 10.0), 2),
+        "valve_status": "OPEN",
+        "emergency_stop": False,
+        "ground_truth_anomaly": int(is_anomaly)
+    }
+
+
+def stream_data():
+    records = load_industrial_datasets()
+    use_synthetic = len(records) == 0
+
+    print("Starting DePIN-Guard IoT Data Streamer...")
+    print(f"Target URL: {BACKEND_URL}")
+    print(f"Mode: {'Synthetic' if use_synthetic else 'Real Combined Industrial Datasets'}")
+    print(f"Devices count: {len(DEVICES)}")
+    print(f"Stream delay: {STREAM_DELAY}s | Continuous 24/7 loop: {CONTINUOUS_LOOP}")
+
+    total_sent = 0
+    successful_sent = 0
+    error_count = 0
+    device_idx = 0
+    record_idx = 0
+
+    headers = {
+        "X-API-Key": API_KEY,
+        "Content-Type": "application/json"
+    }
 
     try:
-        client.connect(MQTT_BROKER, MQTT_PORT, 60)
-        client.loop_start()
-        print("⏱️  Running in background... (This is normal - no spam)\n")
-
         while True:
-            for device in DEVICES:
-                data    = generate_sensor_data(device)
-                payload = json.dumps(data)
-                client.publish(MQTT_TOPIC, payload, qos=1)
-                # Silent mode - no per-device logs
-                time.sleep(1)
-            time.sleep(2)
+            device_id = DEVICES[device_idx % len(DEVICES)]
+            device_idx += 1
+
+            if use_synthetic:
+                rec = generate_synthetic_record()
+            else:
+                rec = records[record_idx]
+                record_idx += 1
+                if record_idx >= len(records):
+                    if not CONTINUOUS_LOOP:
+                        print("Reached end of dataset. Exiting.")
+                        break
+                    record_idx = 0
+
+            timestamp_utc = datetime.now(timezone.utc).isoformat()
+            meta = format_status(device_id, rec["temperature"], rec["vibration"], rec["power_usage"])
+
+            payload = {
+                "device_id": device_id,
+                "temperature": rec["temperature"],
+                "vibration": rec["vibration"],
+                "power_usage": rec["power_usage"],
+                "pressure": rec.get("pressure", 0.0),
+                "timestamp": timestamp_utc,
+                "machine_name": meta["machine_name"],
+                "alert_level": meta["alert_level"],
+                "status_short": meta["status_short"],
+                "recommendations": meta["recommendations"],
+            }
+            payload["signature"] = sign_payload(payload)
+
+            try:
+                resp = requests.post(BACKEND_URL, json=payload, headers=headers, timeout=10)
+                total_sent += 1
+                if resp.status_code == 200:
+                    successful_sent += 1
+                else:
+                    error_count += 1
+                    if error_count == 1:
+                        print(f"Backend returned HTTP status {resp.status_code}: {resp.text[:120]}")
+            except requests.exceptions.ConnectionError:
+                error_count += 1
+                if error_count == 1:
+                    print(f"Connection error to {BACKEND_URL}. Backend may be offline.")
+            except Exception as exc:
+                error_count += 1
+                if error_count == 1:
+                    print(f"Request error: {exc}")
+
+            if total_sent > 0 and total_sent % 20 == 0:
+                print(f"[Telemetry] Sent: {total_sent} | Success: {successful_sent} | Errors: {error_count} | Last Device: {device_id}")
+
+            time.sleep(STREAM_DELAY)
 
     except KeyboardInterrupt:
-        print("\n✅ Simulator stopped gracefully.")
-        client.loop_stop()
-        client.disconnect()
-    except Exception as e:
-        print(f"❌ Error: {e}")
-
-
-def generate_training_data(num_rows=10000):
-    filename   = "normal_training_data.csv"
-    fieldnames = ["timestamp", "device_id", "temperature", "vibration", "power_usage"]
-
-    print(f"📊 Generating {num_rows} rows of training data...")
-    with open(filename, "w", newline="") as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-        for i in range(num_rows):
-            device = random.choice(DEVICES)
-            writer.writerow({
-                "timestamp":   datetime.now().isoformat(),
-                "device_id":   device,
-                "temperature": round(random.uniform(20.0, 60.0), 2),
-                "vibration":   round(random.uniform(0.1, 2.0), 2),
-                "power_usage": round(random.uniform(10.0, 50.0), 2),
-            })
-    print(f"✅ Generated {num_rows} rows → {filename}")
+        print("\nStreamer stopped by user.")
+        print(f"Final Stats - Sent: {total_sent}, Success: {successful_sent}, Errors: {error_count}")
 
 
 if __name__ == "__main__":
-    import sys
-
-    if len(sys.argv) > 1 and sys.argv[1] == "generate":
-        generate_training_data(10000)
-    elif len(sys.argv) > 1 and sys.argv[1] == "secure":
-        run_secure_simulator()
-    elif len(sys.argv) > 1 and sys.argv[1] == "replay":
-        run_replay_simulator()
-    elif len(sys.argv) > 1 and sys.argv[1] == "online":
-        run_online_simulator()
-    elif SIMULATOR_MODE == "online":
-        run_online_simulator()
-    elif SIMULATOR_MODE == "replay":
-        run_replay_simulator()
-    else:
-        run_simulator()
+    stream_data()
