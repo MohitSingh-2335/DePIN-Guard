@@ -60,7 +60,7 @@ const SignupPage = () => {
         throw new Error(errData.detail || 'Signup failed. Please try again.');
       }
 
-      alert(`✅ Account created successfully!\nWelcome, ${formData.fullName.trim()}!`);
+      alert(`Account created successfully! Welcome, ${formData.fullName.trim()}!`);
       navigate('/login');
 
     } catch (err) {
@@ -103,7 +103,7 @@ const SignupPage = () => {
           </div>
 
           <form onSubmit={handleSubmit} className="auth-form" noValidate>
-            {error && <div className="error-message"><span>⚠️</span> {error}</div>}
+            {error && <div className="error-message">{error}</div>}
 
             <div className="form-group">
               <label className="form-label">Full Name</label>
@@ -129,11 +129,10 @@ const SignupPage = () => {
                   placeholder="Min. 8 characters"
                   className={`form-input ${fieldErrors.password ? 'input-error' : ''}`} />
                 <button type="button" className="password-toggle-icon" onClick={() => setShowPassword(!showPassword)}>
-                  {showPassword ? '🙈' : '👁️'}
+                  {showPassword ? 'Hide' : 'Show'}
                 </button>
               </div>
               {fieldErrors.password && <span className="field-error">{fieldErrors.password}</span>}
-              {/* Yahan se Strength meter line hata di gayi hai */}
             </div>
 
             <div className="form-group">
@@ -144,7 +143,7 @@ const SignupPage = () => {
                   placeholder="Re-enter password"
                   className={`form-input ${fieldErrors.confirmPassword ? 'input-error' : ''}`} />
                 <button type="button" className="password-toggle-icon" onClick={() => setShowConfirm(!showConfirm)}>
-                  {showConfirm ? '🙈' : '👁️'}
+                  {showConfirm ? 'Hide' : 'Show'}
                 </button>
               </div>
               {fieldErrors.confirmPassword && <span className="field-error">{fieldErrors.confirmPassword}</span>}
@@ -159,7 +158,7 @@ const SignupPage = () => {
             </div>
 
             <button type="submit" className="submit-button" disabled={isLoading}>
-              {isLoading ? '🔐 Creating account...' : 'Create Account →'}
+              {isLoading ? 'Creating account...' : 'Create Account'}
             </button>
           </form>
 
