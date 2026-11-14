@@ -46,7 +46,7 @@ services:
     working_dir: /root
     command: orderer
     volumes:
-      - ../blockchain/channel-artifacts/genesis.block:/var/hyperledger/orderer/orderer.genesis.block
+      - ../blockchain/system-genesis-block/genesis.block:/var/hyperledger/orderer/orderer.genesis.block
       - ../blockchain/organizations/ordererOrganizations/orderer.depin/orderers/orderer.orderer.depin/msp:/var/hyperledger/orderer/msp
       - ../blockchain/organizations/ordererOrganizations/orderer.depin/orderers/orderer.orderer.depin/tls:/var/hyperledger/orderer/tls
       - orderer.orderer.depin:/var/hyperledger/production/orderer
