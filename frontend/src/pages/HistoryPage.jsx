@@ -92,11 +92,11 @@ const HistoryPage = () => {
             <p className="page-subtitle">Real-time history of DePIN node activities</p>
           </div>
           <button className="export-button" onClick={handleExportCSV}>
-            <span>📥</span> Export CSV
+            Export CSV
           </button>
         </div>
 
-        {/* 📊 Mini Stats Grid (Point #7) */}
+        {/* Mini Stats Grid */}
         <div className="history-stats-grid">
           <div className="stat-card">
             <span className="stat-label">Total Logs</span>
@@ -116,7 +116,7 @@ const HistoryPage = () => {
           </div>
         </div>
 
-        {/* 🔍 Search & Filters (Point #3, #4) */}
+        {/* Search and Filters */}
         <div className="controls-section">
           <div className="search-wrapper">
             <input 
@@ -141,12 +141,12 @@ const HistoryPage = () => {
           </div>
         </div>
 
-        {/* 📝 Improved Table (Point #1) */}
+        {/* Activity Table */}
         <div className="table-container">
           {loading ? (
             <div className="loader">Syncing with Ledger...</div>
           ) : filteredData.length === 0 ? (
-            <div className="empty-state">🚫 No activity logs found.</div> // (Point #9)
+            <div className="empty-state">No activity logs found.</div>
           ) : (
             <table className="data-table">
               <thead>
