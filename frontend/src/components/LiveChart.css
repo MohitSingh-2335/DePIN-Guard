@@ -52,7 +52,7 @@
   color: rgba(200,221,232,0.35); font-size: 0.82rem; font-style: italic;
 }
 
-/* TABLE WRAPPER — ✅ FIX 4: fixed height, manual scroll only */
+/* TABLE WRAPPER — fixed height, manual scroll only */
 .live-chart-table-wrapper {
   max-height: 260px;
   overflow-y: auto;
