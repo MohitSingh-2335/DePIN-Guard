@@ -277,6 +277,7 @@ class SensorData(BaseModel):
     temperature: float
     vibration:   float
     power_usage: float
+    pressure:    float = 0.0
     timestamp:   str
     signature:   str = ""
     
@@ -496,7 +497,8 @@ async def process_data(request: Request, data: SensorData):
             device_id=data.device_id,
             temperature=data.temperature,
             vibration=data.vibration,
-            power_usage=data.power_usage
+            power_usage=data.power_usage,
+            pressure=data.pressure
         )
         is_anomaly = ai_result.get("is_anomaly", False)
         ai_source  = "in_memory_lstm"
@@ -507,6 +509,7 @@ async def process_data(request: Request, data: SensorData):
             temperature=data.temperature,
             vibration=data.vibration,
             power_usage=data.power_usage,
+            pressure=data.pressure,
         )
         await save_sensor_data(sensor_doc)
 
@@ -516,6 +519,7 @@ async def process_data(request: Request, data: SensorData):
             "temperature": data.temperature,
             "vibration":   data.vibration,
             "power_usage": data.power_usage,
+            "pressure":    data.pressure,
             "is_anomaly":  is_anomaly,
             "timestamp":   datetime.now().isoformat(),
         })
