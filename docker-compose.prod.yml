@@ -237,33 +237,14 @@ services:
   # APP SERVICES
   # ═══════════════════════════════════════════════════════════════════════════
 
-  ai-service:
-    build: ./ai-service
-    container_name: ai-service
-    ports:
-      - "10000:10000"
-    environment:
-      - FLASK_ENV=production
-      - PORT=10000
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:10000/health')"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-    networks:
-      - depin-prod
-    restart: unless-stopped
-
   auth-service:
     build: ./auth-service
     container_name: auth-service
     ports:
       - "8001:8001"
     environment:
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-here}
-    env_file:
-      - ./auth-service/.env
+      - MONGODB_URI=${MONGODB_URI}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 30s
@@ -280,15 +261,11 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DEPIN_API_KEY=${DEPIN_API_KEY:-depin-secret-key}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-here}
-      - AI_SERVICE_URL=http://ai-service:10000/predict
+      - DEPIN_API_KEY=${DEPIN_API_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - MONGODB_URI=${MONGODB_URI}
       - BLOCKCHAIN_ENABLED=true
-    env_file:
-      - ./backend/.env
     depends_on:
-      ai-service:
-        condition: service_healthy
       auth-service:
         condition: service_healthy
       blockchain-init:
@@ -304,16 +281,19 @@ services:
     restart: unless-stopped
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        - VITE_API_URL=${VITE_API_URL:-http://localhost:8000}
+        - VITE_AUTH_URL=${VITE_AUTH_URL:-http://localhost:8001}
+        - VITE_API_KEY=${DEPIN_API_KEY}
     container_name: frontend
     ports:
       - "5173:5173"
     environment:
       - VITE_API_URL=http://localhost:8000
       - VITE_AUTH_URL=http://localhost:8001
-      - VITE_API_KEY=${DEPIN_API_KEY:-depin-secret-key}
-    env_file:
-      - ./frontend/.env
+      - VITE_API_KEY=${DEPIN_API_KEY}
     depends_on:
       backend:
         condition: service_healthy
@@ -327,15 +307,14 @@ services:
       - depin-prod
     restart: unless-stopped
 
-  iot-simulator:
-    build: ./iot-simulator
-    container_name: iot-simulator
+  iot:
+    build: ./iot
+    container_name: iot
     environment:
-      - BACKEND_URL=http://backend:8000
-      - DEPIN_API_KEY=${DEPIN_API_KEY:-depin-secret-key}
-      - SIMULATOR_MODE=${SIMULATOR_MODE:-synthetic}
-    env_file:
-      - ./iot-simulator/.env
+      - BACKEND_URL=http://backend:8000/api/process_data
+      - DEPIN_API_KEY=${DEPIN_API_KEY}
+      - CONTINUOUS_LOOP=true
+      - STREAM_DELAY=2
     depends_on:
       backend:
         condition: service_healthy
