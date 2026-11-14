@@ -34,10 +34,10 @@ export const SensorDataTable = ({ data = [], title = 'Sensor Readings', isLoadin
 
   const getStatusIcon = (status) => {
     switch (status?.toLowerCase()) {
-      case 'normal': return '✅';
-      case 'warning': return '⚠️';
-      case 'critical': return '🚨';
-      default: return '❓';
+      case 'normal': return '[OK]';
+      case 'warning': return '[WARN]';
+      case 'critical': return '[ALERT]';
+      default: return '[UNK]';
     }
   };
 
