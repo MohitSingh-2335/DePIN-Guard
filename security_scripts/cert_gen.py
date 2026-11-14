@@ -7,7 +7,7 @@ import sys
 
 # Safety check — don't overwrite existing keys
 if os.path.exists("docker/certs/ca.key"):
-    print("⚠️  Keys already exist! Use --force to regenerate.")
+    print("Notice: Keys already exist! Use --force to regenerate.")
     print("    python cert_gen.py --force")
     if "--force" not in sys.argv:
         sys.exit(0)
@@ -52,7 +52,7 @@ client_cert = (
     .serial_number(x509.random_serial_number())
     .not_valid_before(datetime.datetime.utcnow())
     .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=365))
-    .sign(ca_key, hashes.SHA256())  # ✅ Signed with ca_key
+    .sign(ca_key, hashes.SHA256())
 )
 
 # ─── Save to docker/certs/ ───
@@ -89,7 +89,7 @@ with open("security_scripts/client.key", "wb") as f:
         serialization.NoEncryption()
     ))
 
-print("✅ CA generated: docker/certs/ca.crt, docker/certs/ca.key")
-print("✅ Server certs: docker/certs/server.crt, docker/certs/server.key")
-print("✅ Client certs: security_scripts/client.crt, security_scripts/client.key")
-print("⚠️  Share client.crt and client.key with Vineet directly — DO NOT push .key files to GitHub!")
+print("CA generated: docker/certs/ca.crt, docker/certs/ca.key")
+print("Server certs: docker/certs/server.crt, docker/certs/server.key")
+print("Client certs: security_scripts/client.crt, security_scripts/client.key")
+print("Keep client certificates secure - do not commit private keys to GitHub.")
