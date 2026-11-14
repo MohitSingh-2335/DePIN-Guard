@@ -20,21 +20,21 @@ const CustomTooltip = ({ active, payload, label, timePeriod }) => {
       color: '#f1f5f9', boxShadow: '0 4px 20px rgba(0,0,0,0.4)', minWidth: 140,
     }}>
       <p style={{ margin: '0 0 8px', color: '#94a3b8', fontWeight: 600, borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: 6 }}>
-        {timePeriod === '24h' ? '🕐' : '📅'} {label}
+        {label}
       </p>
       {scans && (
         <p style={{ margin: '0 0 4px', color: '#6366f1', fontWeight: 600 }}>
-          📊 Scans: <span style={{ color: '#f1f5f9' }}>{scans.value}</span>
+          Scans: <span style={{ color: '#f1f5f9' }}>{scans.value}</span>
         </p>
       )}
       {alerts && (
         <p style={{ margin: 0, color: '#ef4444', fontWeight: 600 }}>
-          🚨 Alerts: <span style={{ color: '#f1f5f9' }}>{alerts.value}</span>
+          Alerts: <span style={{ color: '#f1f5f9' }}>{alerts.value}</span>
         </p>
       )}
       {scans?.payload?.isPeak && (
         <p style={{ margin: '6px 0 0', fontSize: 11, color: '#a78bfa', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 5 }}>
-          ⚡ Peak activity
+          Peak activity
         </p>
       )}
     </div>
@@ -69,7 +69,9 @@ const DashboardPage = () => {
           ? history.map((rec, i) => ({
               id:     rec.id ?? i,
               device: rec.device ?? 'Unknown',
-              value:  rec.temp,
+              value:  rec.temp ?? 0,
+              vib:    rec.vib ?? 0,
+              pwr:    rec.pwr ?? 0,
               unit:   '°C',
               status: rec.status ?? 'normal',
               time:   rec.timestamp ? new Date(rec.timestamp).toLocaleTimeString() : '—',
@@ -328,14 +330,14 @@ const DashboardPage = () => {
                   alert_level={data.status || 'normal'}
                   status_short={
                     data.status === 'critical'
-                      ? `⚠ High temperature detected: ${data.value}${data.unit}. Immediate attention required.`
+                      ? `High temperature detected: ${data.value}${data.unit}. Immediate attention required.`
                       : data.status === 'warning'
                       ? `Temperature at ${data.value}${data.unit} — approaching threshold. Monitor closely.`
                       : `Operating normally at ${data.value}${data.unit}. All parameters within range.`
                   }
                   temperature={data.value}
-                  vibration={parseFloat((Math.random() * 12).toFixed(2))}
-                  power_usage={parseFloat((Math.random() * 100 + 50).toFixed(1))}
+                  vibration={data.vib}
+                  power_usage={data.pwr}
                   recommendations={
                     data.status === 'critical'
                       ? ['Stop machine immediately and alert maintenance team','Check cooling system and ventilation','Do not restart until temperature drops below 70°C']
