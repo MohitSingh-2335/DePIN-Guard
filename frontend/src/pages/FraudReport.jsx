@@ -250,7 +250,7 @@ export default function FraudReport() {
             <div className="fraud-modal" onClick={e => e.stopPropagation()}>
               <div className="fraud-modal-header">
                 <h2>Alert Details</h2>
-                <button className="fraud-modal-close" onClick={() => setSelected(null)}>✕</button>
+                <button className="fraud-modal-close" onClick={() => setSelected(null)}>x</button>
               </div>
               <div className="fraud-modal-body">
 
