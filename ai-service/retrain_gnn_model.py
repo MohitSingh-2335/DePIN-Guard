@@ -209,7 +209,7 @@ def train_gnn(graph_data):
     
     # Save model
     torch.save(model.state_dict(), GNN_MODEL_PATH)
-    logger.info(f"✅ Model saved to {GNN_MODEL_PATH}")
+    logger.info(f"Model saved to {GNN_MODEL_PATH}")
     logger.info(f"Final training loss: {train_losses[-1]:.6f}")
     
     return model, train_losses
@@ -270,7 +270,7 @@ def main():
     accuracy = evaluate_gnn(model, graph_data)
     
     logger.info("\n" + "="*60)
-    logger.info("✅ GNN RETRAINING COMPLETE!")
+    logger.info("GNN RETRAINING COMPLETE")
     logger.info("="*60)
     logger.info(f"\nArtifacts saved:")
     logger.info(f"  - Model: {GNN_MODEL_PATH}")
@@ -278,8 +278,8 @@ def main():
     logger.info(f"  - Accuracy: {accuracy:.4f}")
     logger.info(f"\nGNN complements LSTM:")
     logger.info(f"  - LSTM: Detects individual machine anomalies")
-    logger.info(f"  - GNN: Detects relationships (e.g., Mixer fails → Temp rises)")
-    logger.info(f"  - Combined: Better accuracy & explainability")
+    logger.info(f"  - GNN: Detects relationships (e.g., Mixer fails -> Temp rises)")
+    logger.info(f"  - Combined: Better accuracy and explainability")
 
 
 if __name__ == "__main__":
