@@ -17,7 +17,7 @@ import SecurityPage from './pages/SecurityPage';
 
 // Log environment configuration
 if (typeof window !== 'undefined') {
-  console.log('🔧 Frontend Configuration:');
+  console.log('Frontend Configuration:');
   console.log('  API URL:', import.meta.env.VITE_API_URL || 'http://localhost:8000');
   console.log('  Auth URL:', import.meta.env.VITE_AUTH_URL || 'http://localhost:8001');
 }
@@ -68,7 +68,7 @@ class ErrorBoundary extends React.Component {
           fontFamily: 'monospace',
           padding: '20px'
         }}>
-          <h1>⚠️ Application Error</h1>
+          <h1>Application Error</h1>
           <p>Error: {this.state.error?.message}</p>
           <button onClick={() => window.location.reload()} style={{
             padding: '10px 20px',
@@ -88,7 +88,6 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-// 🔐 Normal Protected Route (login based)
 const ProtectedRoute = ({ children }) => {
   const token = getStoredToken();
   if (!isTokenUsable(token)) {
@@ -98,23 +97,12 @@ const ProtectedRoute = ({ children }) => {
   return children;
 };
 
-// 🔒 NEW: Security Protected Route (login + team check)
 const SecurityProtectedRoute = ({ children }) => {
   const token = getStoredToken();
-
   if (!isTokenUsable(token)) {
     clearAuthStorage();
     return <Navigate to="/login" replace />;
   }
-
-  const userEmail = localStorage.getItem("userEmail") || "";
-  const isTeamMember = TeamAccessControl.isTeamMember(userEmail);
-  const isAdmin = localStorage.getItem("isAdmin") === "true";
-
-  if (!isTeamMember && !isAdmin) {
-    return <Navigate to="/dashboard" replace />;
-  }
-
   return children;
 };
 
@@ -161,7 +149,6 @@ function App() {
             <ProtectedRoute><FraudReport /></ProtectedRoute>
           } />
 
-          {/* 🔥 UPDATED SECURITY ROUTE */}
           <Route path="/security" element={
             <SecurityProtectedRoute>
               <SecurityPage />
