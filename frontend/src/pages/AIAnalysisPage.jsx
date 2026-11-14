@@ -11,7 +11,7 @@ const AIAnalysisPage = () => {
     accuracy: 0,
     modelsActive: 0,
   });
-  const [aiModels, setAiModels] = useState([]); // Backend se aayenge
+  const [aiModels, setAiModels] = useState([]);
   const [selectedAnalysis, setSelectedAnalysis] = useState(null);
   const [selectedModel, setSelectedModel] = useState('All Models');
   const [loading, setLoading] = useState(true);
@@ -20,22 +20,18 @@ const AIAnalysisPage = () => {
     try {
       const res = await authenticatedFetch('/api/ai-analysis');
       if (!res) {
-        console.warn('[AIAnalysis] No response from API');
         return;
       }
       
       if (!res.ok) {
-        console.error(`[AIAnalysis] API error ${res.status}:`, res.statusText);
         return;
       }
 
       const data = await res.json();
       if (!data) {
-        console.warn('[AIAnalysis] Empty response data');
         return;
       }
 
-      // 1. Stats update (Pura data backend se)
       setAiStats({
         totalAnalyses:     data.total_analyses   ?? 0,
         anomaliesDetected: data.anomalies_found  ?? 0,
@@ -43,20 +39,18 @@ const AIAnalysisPage = () => {
         modelsActive:      data.active_models_count ?? 0,
       });
 
-      // 2. Models list update (Dropdown ke liye)
       if (data.available_models && Array.isArray(data.available_models)) {
         setAiModels(data.available_models);
       }
 
-      // 3. Results list update
       if (data.recent_results && Array.isArray(data.recent_results)) {
         setAnalysisResults(prev => {
           const existingIds = new Set(prev.map(r => r.id));
           
           const newResults = data.recent_results
             .filter(r => !existingIds.has(r.id))
-            .map((rec) => ({
-              id:             rec.id ?? Math.random(),
+            .map((rec, i) => ({
+              id:             rec.id ?? `${rec.device || 'device'}-${rec.timestamp || Date.now()}-${i}`,
               device:         rec.device         ?? 'Unknown',
               type:           rec.analysis_type  ?? 'N/A',
               severity:       rec.severity       ?? 'low',
