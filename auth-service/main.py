@@ -1,130 +1,134 @@
-# auth-service/main.py — MongoDB Version with JWT + Signup + Login
+import os
+import random
+import smtplib
+import certifi
+from datetime import datetime, timedelta
+from email.mime.text import MIMEText
+from contextlib import asynccontextmanager
+from typing import Optional
+
+import jwt
+import bcrypt
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
-from contextlib import asynccontextmanager
 from motor.motor_asyncio import AsyncIOMotorClient as AsyncClient
-import jwt, datetime, bcrypt, os, random, smtplib, certifi
-from email.mime.text import MIMEText
-from dotenv import load_dotenv
 
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+load_dotenv(os.path.join(ROOT_DIR, ".env"))
 
-# ==========================================
-# 🔒 SECRET KEY
-# ==========================================
 SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 if not SECRET_KEY:
-    raise RuntimeError("JWT_SECRET_KEY not set in .env file!")
+    raise RuntimeError("JWT_SECRET_KEY is required in root .env file")
 
-ACCESS_TOKEN_EXPIRE_MINUTES = 15
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
 REFRESH_TOKEN_EXPIRE_HOURS = 24
 
-# ==========================================
-# 📧 EMAIL CONFIG
-# ==========================================
 EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
 EMAIL_USER = os.getenv("EMAIL_USER")
 EMAIL_PASS = os.getenv("EMAIL_PASS")
 
-# ==========================================
-# 🗄️ MONGODB SETUP
-# ==========================================
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017/depin_guard")
 mongodb_client = None
 db = None
 
+# In-memory user fallback if MongoDB is temporarily unreachable
+fallback_users = {}
+fallback_revoked = set()
+
+
 async def connect_to_mongo():
-    """Connect to MongoDB"""
     global mongodb_client, db
     try:
-        if "mongodb+srv://" in MONGODB_URI:
+        if MONGODB_URI and "mongodb+srv://" in MONGODB_URI:
             mongodb_client = AsyncClient(
                 MONGODB_URI,
                 tls=True,
                 tlsCAFile=certifi.where(),
-                serverSelectionTimeoutMS=5000,
+                serverSelectionTimeoutMS=3000,
             )
         else:
-            mongodb_client = AsyncClient(MONGODB_URI)
-        
+            mongodb_client = AsyncClient(MONGODB_URI, serverSelectionTimeoutMS=2000)
+
         await mongodb_client.admin.command('ping')
         db = mongodb_client["depin_guard"]
-        
-        # Create indexes
-        users_collection = db["users"]
-        await users_collection.create_index("email", unique=True)
-        await users_collection.create_index("created_at")
-        
-        revoked_collection = db["revoked_tokens"]
-        await revoked_collection.create_index("revoked_at", expireAfterSeconds=86400)
-        
-        print("✅ Connected to MongoDB Auth Service")
-    except Exception as e:
-        print(f"❌ MongoDB connection failed: {e}")
-        raise
+
+        users_col = db["users"]
+        await users_col.create_index("email", unique=True)
+        await users_col.create_index("created_at")
+
+        revoked_col = db["revoked_tokens"]
+        await revoked_col.create_index("revoked_at", expireAfterSeconds=86400)
+
+        print("Connected to MongoDB Auth Service.")
+    except Exception as exc:
+        db = None
+        print(f"MongoDB connection notice ({exc}). Operating with local in-memory fallback.")
+
 
 async def close_mongo_connection():
-    """Close MongoDB connection"""
     global mongodb_client
     if mongodb_client:
         mongodb_client.close()
-        print("🔌 MongoDB connection closed")
+        print("MongoDB connection closed.")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """FastAPI lifespan events"""
     await connect_to_mongo()
     yield
     await close_mongo_connection()
 
-# ==========================================
-# 📊 PYDANTIC MODELS
-# ==========================================
+
 class UserSignup(BaseModel):
     email: str
     password: str
-    full_name: str = None
-    phone: str = None
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+
 
 class UserLogin(BaseModel):
     email: str
     password: str
 
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str
     user_email: str
-    full_name: str = None
+    full_name: Optional[str] = None
 
-class UserProfile(BaseModel):
-    email: str
-    full_name: str = None
-    phone: str = None
-    created_at: str = None
-    last_login: str = None
 
-# ==========================================
-# 🔑 JWT HELPER FUNCTIONS
-# ==========================================
-def create_access_token(email: str, expires_delta: datetime.timedelta = None):
-    """Create JWT access token"""
-    if not expires_delta:
-        expires_delta = datetime.timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    expire = datetime.datetime.utcnow() + expires_delta
+class ProfileUpdate(BaseModel):
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+    email_notifications: Optional[bool] = None
+    sms_notifications: Optional[bool] = None
+    alert_notifications: Optional[bool] = None
+    auto_refresh: Optional[bool] = None
+    refresh_interval: Optional[str] = None
+    data_retention: Optional[str] = None
+    theme: Optional[str] = None
+    language: Optional[str] = None
+
+
+def create_access_token(email: str, expires_delta: Optional[timedelta] = None):
+    delta = expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.utcnow() + delta
     payload = {"sub": email, "type": "access", "exp": expire}
     return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
+
 def create_refresh_token(email: str):
-    """Create JWT refresh token"""
-    expire = datetime.datetime.utcnow() + datetime.timedelta(hours=REFRESH_TOKEN_EXPIRE_HOURS)
+    expire = datetime.utcnow() + timedelta(hours=REFRESH_TOKEN_EXPIRE_HOURS)
     payload = {"sub": email, "type": "refresh", "exp": expire}
     return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
+
 def verify_token(token: str):
-    """Verify JWT token"""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
         return payload.get("sub")
@@ -133,45 +137,36 @@ def verify_token(token: str):
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-# ==========================================
-# 🔐 PASSWORD HELPER FUNCTIONS
-# ==========================================
-def hash_password(password: str):
-    """Hash password using bcrypt"""
+
+def hash_password(password: str) -> bytes:
     salt = bcrypt.gensalt(rounds=12)
     return bcrypt.hashpw(password.encode('utf-8'), salt)
 
-def verify_password(password: str, password_hash: bytes):
-    """Verify password against hash"""
+
+def verify_password(password: str, password_hash: bytes) -> bool:
+    if isinstance(password_hash, str):
+        password_hash = password_hash.encode('utf-8')
     return bcrypt.checkpw(password.encode('utf-8'), password_hash)
 
-# ==========================================
-# 📧 EMAIL HELPER FUNCTIONS
-# ==========================================
-def send_email(to_email: str, subject: str, body: str):
-    """Send email via Gmail SMTP"""
+
+def send_email(to_email: str, subject: str, body: str) -> bool:
+    if not EMAIL_USER or not EMAIL_PASS:
+        return True
     try:
-        if not EMAIL_USER or not EMAIL_PASS:
-            print(f"⚠️  Email not configured. Would send to {to_email}: {subject}")
-            return True
-        
         msg = MIMEText(body)
         msg["Subject"] = subject
         msg["From"] = EMAIL_USER
         msg["To"] = to_email
-        
         with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT) as server:
             server.starttls()
             server.login(EMAIL_USER, EMAIL_PASS)
             server.send_message(msg)
         return True
-    except Exception as e:
-        print(f"❌ Email failed: {e}")
+    except Exception as exc:
+        print(f"Email delivery notice: {exc}")
         return False
 
-# ==========================================
-# 🚀 FASTAPI APP
-# ==========================================
+
 app = FastAPI(title="DePIN Auth Service", version="2.0", lifespan=lifespan)
 
 app.add_middleware(
@@ -182,112 +177,127 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ==========================================
-# 🔐 BEARER SCHEME
-# ==========================================
 bearer_scheme = HTTPBearer(auto_error=True)
 
-# ==========================================
-# 🏥 HEALTH CHECK
-# ==========================================
+
+@app.get("/")
+async def root():
+    return {
+        "service": "DePIN-Guard Auth Service",
+        "version": "2.0",
+        "status": "running"
+    }
+
+
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "service": "auth-service", "database": "mongodb"}
+    return {
+        "status": "healthy",
+        "service": "auth-service",
+        "database": "mongodb" if db is not None else "in_memory_fallback"
+    }
 
-# ==========================================
-# 📝 SIGNUP
-# ==========================================
+
 @app.post("/signup")
 async def signup(user: UserSignup):
-    """Create new user account"""
-    # Validate email
-    if not "@" in user.email:
+    if "@" not in user.email:
         raise HTTPException(status_code=400, detail="Invalid email format")
-    
     if len(user.password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
-    
-    # Check if user exists
-    users_collection = db["users"]
-    existing = await users_collection.find_one({"email": user.email.lower()})
-    if existing:
-        raise HTTPException(status_code=409, detail="Email already registered")
-    
-    # Hash password and save
+
+    email_clean = user.email.lower().strip()
+    full_name = user.full_name or email_clean.split("@")[0]
     hashed = hash_password(user.password)
-    new_user = {
-        "email": user.email.lower(),
-        "password_hash": hashed,
-        "full_name": user.full_name or user.email.split("@")[0],
-        "phone": user.phone,
-        "created_at": datetime.datetime.utcnow().isoformat(),
-        "last_login": None
-    }
-    
-    result = await users_collection.insert_one(new_user)
-    
-    # Send welcome email
+
+    if db is not None:
+        existing = await db["users"].find_one({"email": email_clean})
+        if existing:
+            raise HTTPException(status_code=409, detail="Email already registered")
+
+        new_user = {
+            "email": email_clean,
+            "password_hash": hashed,
+            "full_name": full_name,
+            "phone": user.phone,
+            "created_at": datetime.utcnow().isoformat(),
+            "last_login": None,
+            "settings": {}
+        }
+        res = await db["users"].insert_one(new_user)
+        user_id = str(res.inserted_id)
+    else:
+        if email_clean in fallback_users:
+            raise HTTPException(status_code=409, detail="Email already registered")
+        fallback_users[email_clean] = {
+            "email": email_clean,
+            "password_hash": hashed,
+            "full_name": full_name,
+            "phone": user.phone,
+            "created_at": datetime.utcnow().isoformat(),
+            "last_login": None,
+            "settings": {}
+        }
+        user_id = email_clean
+
     send_email(
-        user.email,
+        email_clean,
         "Welcome to DePIN-Guard",
-        f"Welcome {new_user['full_name']}! Your account has been created successfully."
+        f"Welcome {full_name}! Your account has been created successfully."
     )
-    
+
     return {
-        "message": f"Account created successfully! Welcome {new_user['full_name']}",
-        "email": user.email,
-        "user_id": str(result.inserted_id)
+        "message": f"Account created successfully for {full_name}",
+        "email": email_clean,
+        "user_id": user_id
     }
 
-# ==========================================
-# 🔐 LOGIN
-# ==========================================
+
 @app.post("/login")
 async def login(user: UserLogin):
-    """Login with email and password"""
-    users_collection = db["users"]
-    
-    # Get user
-    db_user = await users_collection.find_one({"email": user.email.lower()})
+    email_clean = user.email.lower().strip()
+
+    if db is not None:
+        db_user = await db["users"].find_one({"email": email_clean})
+    else:
+        db_user = fallback_users.get(email_clean)
+
     if not db_user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    # Verify password
+
     if not verify_password(user.password, db_user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    # Update last login
-    await users_collection.update_one(
-        {"_id": db_user["_id"]},
-        {"$set": {"last_login": datetime.datetime.utcnow().isoformat()}}
-    )
-    
-    # Generate tokens
-    access_token = create_access_token(user.email.lower())
-    refresh_token = create_refresh_token(user.email.lower())
-    
+
+    now_iso = datetime.utcnow().isoformat()
+    if db is not None:
+        await db["users"].update_one({"_id": db_user["_id"]}, {"$set": {"last_login": now_iso}})
+    else:
+        db_user["last_login"] = now_iso
+
+    access_token = create_access_token(email_clean)
+    refresh_token = create_refresh_token(email_clean)
+
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
         "token_type": "bearer",
         "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        "user_email": user.email.lower(),
+        "user_email": email_clean,
         "full_name": db_user.get("full_name")
     }
 
-# ==========================================
-# 👤 GET PROFILE
-# ==========================================
+
 @app.get("/profile")
 async def get_profile(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
-    """Get user profile"""
     email = verify_token(credentials.credentials)
-    users_collection = db["users"]
-    
-    db_user = await users_collection.find_one({"email": email})
+
+    if db is not None:
+        db_user = await db["users"].find_one({"email": email})
+    else:
+        db_user = fallback_users.get(email)
+
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     return {
         "profile": {
             "email": db_user["email"],
@@ -299,41 +309,25 @@ async def get_profile(credentials: HTTPAuthorizationCredentials = Depends(bearer
         }
     }
 
-# ==========================================
-# 📝 UPDATE PROFILE & SETTINGS
-# ==========================================
-class ProfileUpdate(BaseModel):
-    full_name: str = None
-    phone: str = None
-    email_notifications: bool = None
-    sms_notifications: bool = None
-    alert_notifications: bool = None
-    auto_refresh: bool = None
-    refresh_interval: str = None
-    data_retention: str = None
-    theme: str = None
-    language: str = None
 
 @app.post("/profile")
 async def update_profile(update_data: ProfileUpdate, credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
-    """Update user profile and settings"""
     email = verify_token(credentials.credentials)
-    users_collection = db["users"]
-    
-    db_user = await users_collection.find_one({"email": email})
+
+    if db is not None:
+        db_user = await db["users"].find_one({"email": email})
+    else:
+        db_user = fallback_users.get(email)
+
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
-    
-    # Prepare update data
-    update_fields = {"updated_at": datetime.datetime.utcnow().isoformat()}
-    
-    # Update basic profile fields
+
+    update_fields = {"updated_at": datetime.utcnow().isoformat()}
     if update_data.full_name is not None:
         update_fields["full_name"] = update_data.full_name
     if update_data.phone is not None:
         update_fields["phone"] = update_data.phone
-    
-    # Build settings object
+
     settings = db_user.get("settings", {})
     if update_data.email_notifications is not None:
         settings["email_notifications"] = update_data.email_notifications
@@ -351,46 +345,41 @@ async def update_profile(update_data: ProfileUpdate, credentials: HTTPAuthorizat
         settings["theme"] = update_data.theme
     if update_data.language is not None:
         settings["language"] = update_data.language
-    
+
     update_fields["settings"] = settings
-    
-    # Update in database
-    result = await users_collection.update_one(
-        {"_id": db_user["_id"]},
-        {"$set": update_fields}
-    )
-    
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    # Return updated profile
-    updated_user = await users_collection.find_one({"_id": db_user["_id"]})
+
+    if db is not None:
+        await db["users"].update_one({"_id": db_user["_id"]}, {"$set": update_fields})
+        updated = await db["users"].find_one({"_id": db_user["_id"]})
+    else:
+        db_user.update(update_fields)
+        updated = db_user
+
     return {
         "message": "Profile updated successfully",
         "profile": {
-            "email": updated_user["email"],
-            "full_name": updated_user.get("full_name"),
-            "phone": updated_user.get("phone"),
-            "created_at": updated_user.get("created_at"),
-            "updated_at": updated_user.get("updated_at"),
-            "settings": updated_user.get("settings", {})
+            "email": updated["email"],
+            "full_name": updated.get("full_name"),
+            "phone": updated.get("phone"),
+            "created_at": updated.get("created_at"),
+            "updated_at": updated.get("updated_at"),
+            "settings": updated.get("settings", {})
         }
     }
 
-# ==========================================
-# 🔓 VERIFY TOKEN
-# ==========================================
+
 @app.post("/verify")
 async def verify_token_endpoint(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
-    """Verify JWT token validity"""
     token = credentials.credentials
-    
-    # Check if token is revoked
-    revoked_collection = db["revoked_tokens"]
-    is_revoked = await revoked_collection.find_one({"token": token})
-    if is_revoked:
+
+    if db is not None:
+        revoked = await db["revoked_tokens"].find_one({"token": token})
+    else:
+        revoked = token in fallback_revoked
+
+    if revoked:
         raise HTTPException(status_code=401, detail="Token has been revoked")
-    
+
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
         if payload.get("type") != "access":
@@ -405,68 +394,43 @@ async def verify_token_endpoint(credentials: HTTPAuthorizationCredentials = Depe
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-# ==========================================
-# 🚪 LOGOUT
-# ==========================================
+
 @app.post("/logout")
 async def logout(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
-    """Logout by revoking token"""
     token = credentials.credentials
-    revoked_collection = db["revoked_tokens"]
-    
-    await revoked_collection.insert_one({
-        "token": token,
-        "revoked_at": datetime.datetime.utcnow().isoformat()
-    })
-    
+    now_iso = datetime.utcnow().isoformat()
+
+    if db is not None:
+        await db["revoked_tokens"].insert_one({"token": token, "revoked_at": now_iso})
+    else:
+        fallback_revoked.add(token)
+
     return {"message": "Logged out successfully"}
 
-# ==========================================
-# 🔄 REFRESH TOKEN
-# ==========================================
+
 @app.post("/refresh")
 async def refresh_token_endpoint(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
-    """Refresh access token using refresh token"""
     token = credentials.credentials
-    
+
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
         if payload.get("type") != "refresh":
             raise HTTPException(status_code=401, detail="Invalid token type")
-        
+
         email = payload.get("sub")
         new_access_token = create_access_token(email)
-        
+
         return {
             "access_token": new_access_token,
             "token_type": "bearer",
             "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60
         }
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Refresh token expired — please log in again")
+        raise HTTPException(status_code=401, detail="Refresh token expired - please log in again")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-# ==========================================
-# 🎯 ROOT
-# ==========================================
-@app.get("/")
-async def root():
-    return {
-        "service": "DePIN-Guard Auth Service",
-        "version": "2.0",
-        "database": "MongoDB",
-        "endpoints": [
-            "POST /signup",
-            "POST /login",
-            "GET /profile",
-            "POST /verify",
-            "POST /logout",
-            "POST /refresh",
-            "GET /health"
-        ]
-    }
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8001)))
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("AUTH_PORT", 8001)))
