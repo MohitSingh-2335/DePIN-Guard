@@ -154,9 +154,11 @@ def generate_synthetic_record():
     }
 
 
-def stream_data():
+def stream_data(max_records: int = None):
     records = load_industrial_datasets()
     use_synthetic = len(records) == 0
+
+    target_limit = max_records or (int(os.getenv("MAX_RECORDS")) if os.getenv("MAX_RECORDS") else None)
 
     print("Starting DePIN-Guard IoT Data Streamer...")
     print(f"Target URL: {BACKEND_URL}")
@@ -177,6 +179,10 @@ def stream_data():
 
     try:
         while True:
+            if target_limit and total_sent >= target_limit:
+                print(f"Reached specified limit of {target_limit} records. Exiting.")
+                break
+
             device_id = DEVICES[device_idx % len(DEVICES)]
             device_idx += 1
 
