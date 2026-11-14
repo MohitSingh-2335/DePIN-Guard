@@ -1,11 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-
-/**
- * BlockchainControl Component
- * Allows users to start/stop blockchain via API calls
- * Place this in: frontend/src/components/BlockchainControl.jsx
- */
 
 export const BlockchainControl = ({ apiUrl, apiKey }) => {
   const [status, setStatus] = useState('unknown');
@@ -13,81 +6,92 @@ export const BlockchainControl = ({ apiUrl, apiKey }) => {
   const [containers, setContainers] = useState([]);
   const [message, setMessage] = useState('');
 
-  // Check blockchain status
   const checkStatus = async () => {
     try {
-      const response = await axios.get(`${apiUrl}/api/blockchain/status`, {
+      const response = await fetch(`${apiUrl}/api/blockchain/status`, {
         headers: { 'X-API-Key': apiKey }
       });
-      if (response.data) {
-        setStatus(response.data.status || 'unknown');
-        setContainers(response.data.containers || []);
-        setMessage(response.data.message || '');
+      const data = await response.json();
+      if (response.ok && data) {
+        setStatus(data.status || 'unknown');
+        setContainers(data.containers || []);
+        setMessage(data.message || '');
+      } else {
+        setStatus('error');
+        setMessage(data.detail || 'Connection failed');
       }
     } catch (error) {
-      console.error('[BlockchainControl] Status check failed:', error.message);
       setStatus('error');
-      setMessage(error.response?.data?.detail || error.message || 'Connection failed');
+      setMessage(error.message || 'Connection failed');
     }
   };
 
-  // Start blockchain
   const handleStart = async () => {
     setLoading(true);
     try {
-      const response = await axios.post(`${apiUrl}/api/blockchain/start`, {}, {
-        headers: { 'X-API-Key': apiKey }
+      const response = await fetch(`${apiUrl}/api/blockchain/start`, {
+        method: 'POST',
+        headers: {
+          'X-API-Key': apiKey,
+          'Content-Type': 'application/json'
+        }
       });
-      if (response.data) {
-        setStatus(response.data.status || 'unknown');
-        setContainers(response.data.containers || []);
-        setMessage(response.data.message || 'Blockchain started');
+      const data = await response.json();
+      if (response.ok && data) {
+        setStatus(data.status || 'unknown');
+        setContainers(data.containers || []);
+        setMessage(data.message || 'Blockchain started');
+      } else {
+        setStatus('error');
+        setMessage(data.detail || 'Failed to start blockchain');
       }
     } catch (error) {
-      console.error('[BlockchainControl] Start failed:', error.message);
       setStatus('error');
-      setMessage(error.response?.data?.detail || 'Failed to start blockchain');
+      setMessage('Failed to start blockchain');
     } finally {
       setLoading(false);
     }
   };
 
-  // Stop blockchain
   const handleStop = async () => {
     setLoading(true);
     try {
-      const response = await axios.post(`${apiUrl}/api/blockchain/stop`, {}, {
-        headers: { 'X-API-Key': apiKey }
+      const response = await fetch(`${apiUrl}/api/blockchain/stop`, {
+        method: 'POST',
+        headers: {
+          'X-API-Key': apiKey,
+          'Content-Type': 'application/json'
+        }
       });
-      if (response.data) {
-        setStatus(response.data.status || 'unknown');
-        setContainers(response.data.containers || []);
-        setMessage(response.data.message || 'Blockchain stopped');
+      const data = await response.json();
+      if (response.ok && data) {
+        setStatus(data.status || 'unknown');
+        setContainers(data.containers || []);
+        setMessage(data.message || 'Blockchain stopped');
+      } else {
+        setStatus('error');
+        setMessage(data.detail || 'Failed to stop blockchain');
       }
     } catch (error) {
-      console.error('[BlockchainControl] Stop failed:', error.message);
       setStatus('error');
-      setMessage(error.response?.data?.detail || 'Failed to stop blockchain');
+      setMessage('Failed to stop blockchain');
     } finally {
       setLoading(false);
     }
   };
 
-  // Check status on mount
   useEffect(() => {
     checkStatus();
-    // Polling every 5 seconds
     const interval = setInterval(checkStatus, 5000);
     return () => clearInterval(interval);
   }, []);
 
-  // Status colors
   const statusColors = {
-    running: '#10b981',    // green
-    stopped: '#ef4444',    // red
-    partial: '#f59e0b',    // amber
-    error: '#dc2626',      // dark red
-    unknown: '#6b7280'     // gray
+    running: '#10b981',
+    stopped: '#ef4444',
+    partial: '#f59e0b',
+    error: '#dc2626',
+    unknown: '#6b7280'
   };
 
   return (
@@ -98,9 +102,8 @@ export const BlockchainControl = ({ apiUrl, apiKey }) => {
       backgroundColor: '#f9fafb',
       fontFamily: 'system-ui, -apple-system, sans-serif'
     }}>
-      <h2 style={{ margin: '0 0 15px 0', color: '#111827' }}>🔗 Blockchain Control</h2>
+      <h2 style={{ margin: '0 0 15px 0', color: '#111827' }}>Blockchain Control</h2>
 
-      {/* Status Badge */}
       <div style={{
         display: 'inline-block',
         padding: '6px 12px',
@@ -114,7 +117,6 @@ export const BlockchainControl = ({ apiUrl, apiKey }) => {
         {status.toUpperCase()}
       </div>
 
-      {/* Message */}
       {message && (
         <p style={{
           margin: '10px 0 15px 0',
@@ -126,7 +128,6 @@ export const BlockchainControl = ({ apiUrl, apiKey }) => {
         </p>
       )}
 
-      {/* Control Buttons */}
       <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
         <button
           onClick={handleStart}
@@ -142,7 +143,7 @@ export const BlockchainControl = ({ apiUrl, apiKey }) => {
             fontSize: '14px'
           }}
         >
-          {loading ? '⏳ Starting...' : '▶️ Start'}
+          {loading ? 'Starting...' : 'Start'}
         </button>
 
         <button
@@ -159,7 +160,7 @@ export const BlockchainControl = ({ apiUrl, apiKey }) => {
             fontSize: '14px'
           }}
         >
-          {loading ? '⏳ Stopping...' : '⏹️ Stop'}
+          {loading ? 'Stopping...' : 'Stop'}
         </button>
 
         <button
@@ -176,11 +177,10 @@ export const BlockchainControl = ({ apiUrl, apiKey }) => {
             fontSize: '14px'
           }}
         >
-          {loading ? '🔄 Updating...' : '🔄 Refresh'}
+          {loading ? 'Updating...' : 'Refresh'}
         </button>
       </div>
 
-      {/* Containers List */}
       {containers.length > 0 && (
         <div>
           <h4 style={{ margin: '15px 0 10px 0', color: '#374151', fontSize: '14px' }}>
