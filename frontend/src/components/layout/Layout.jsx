@@ -8,13 +8,13 @@ const savedTheme = localStorage.getItem('theme') || 'dark';
 document.documentElement.setAttribute('data-theme', savedTheme);
 
 const SEARCH_PAGES = [
-  { keywords: ['dashboard', 'home', 'overview', 'stats'],  path: '/dashboard',    icon: '📊', label: 'Dashboard'    },
-  { keywords: ['blockchain', 'block', 'chain', 'ledger'],  path: '/blockchain',   icon: '🔗', label: 'Blockchain'   },
-  { keywords: ['ai', 'analysis', 'anomaly', 'model'],      path: '/ai-analysis',  icon: '🤖', label: 'AI Analysis'  },
-  { keywords: ['history', 'records', 'data', 'logs'],      path: '/history',      icon: '📜', label: 'History'      },
-  { keywords: ['fraud', 'alert', 'report'],                path: '/fraud-alerts', icon: '🚨', label: 'Fraud Alerts' },
-  { keywords: ['security', 'tls', 'cert', 'prateek'],      path: '/security',     icon: '🛡️', label: 'Security'     },
-  { keywords: ['settings', 'profile', 'account'],          path: '/settings',     icon: '⚙️', label: 'Settings'     },
+  { keywords: ['dashboard', 'home', 'overview', 'stats'],  path: '/dashboard',    tag: 'DASH', label: 'Dashboard'    },
+  { keywords: ['blockchain', 'block', 'chain', 'ledger'],  path: '/blockchain',   tag: 'CHAIN', label: 'Blockchain'   },
+  { keywords: ['ai', 'analysis', 'anomaly', 'model'],      path: '/ai-analysis',  tag: 'AI', label: 'AI Analysis'  },
+  { keywords: ['history', 'records', 'data', 'logs'],      path: '/history',      tag: 'HIST', label: 'History'      },
+  { keywords: ['fraud', 'alert', 'report'],                path: '/fraud-alerts', tag: 'ALERTS', label: 'Fraud Alerts' },
+  { keywords: ['security', 'tls', 'cert'],                 path: '/security',     tag: 'SEC', label: 'Security'     },
+  { keywords: ['settings', 'profile', 'account'],          path: '/settings',     tag: 'SET', label: 'Settings'     },
 ];
 
 const Layout = ({ children }) => {
@@ -94,7 +94,7 @@ const Layout = ({ children }) => {
       setSearchQuery('');
       setSearchResult('');
     } else {
-      setSearchResult(`❌ No page found for "${searchQuery}"`);
+      setSearchResult(`No page found for "${searchQuery}"`);
     }
   };
 
@@ -115,17 +115,16 @@ const Layout = ({ children }) => {
     }
   };
 
-  // ✅ NAV ITEMS UPDATED
   const navItems = [
-    { path: '/dashboard',    icon: '📊', label: 'Dashboard'    },
-    { path: '/blockchain',   icon: '🔗', label: 'Blockchain'   },
-    { path: '/ai-analysis',  icon: '🤖', label: 'AI Analysis'  },
-    { path: '/history',      icon: '📜', label: 'History'      },
-    { path: '/fraud-alerts', icon: '🚨', label: 'Fraud Alerts' },
+    { path: '/dashboard',    tag: 'DASH', label: 'Dashboard'    },
+    { path: '/blockchain',   tag: 'CHAIN', label: 'Blockchain'   },
+    { path: '/ai-analysis',  tag: 'AI', label: 'AI Analysis'  },
+    { path: '/history',      tag: 'HIST', label: 'History'      },
+    { path: '/fraud-alerts', tag: 'ALERT', label: 'Fraud Alerts' },
     ...(isTeamMember || isAdmin
-      ? [{ path: '/security', icon: '🛡️', label: 'Security' }]
+      ? [{ path: '/security', tag: 'SEC', label: 'Security' }]
       : []),
-    { path: '/settings',     icon: '⚙️', label: 'Settings'     },
+    { path: '/settings',     tag: 'SET', label: 'Settings'     },
   ];
 
   return (
@@ -154,7 +153,7 @@ const Layout = ({ children }) => {
                     className="search-quick-btn"
                     onClick={() => { navigate(page.path); closeSearch(); }}
                   >
-                    {page.icon} {page.label}
+                    [{page.tag}] {page.label}
                   </button>
                 ))}
             </div>
@@ -168,7 +167,7 @@ const Layout = ({ children }) => {
       {/* Header */}
       <header className="header">
         <div className="header-left">
-          <button className="menu-toggle" onClick={() => setSidebarOpen(!sidebarOpen)}>☰</button>
+          <button className="menu-toggle" onClick={() => setSidebarOpen(!sidebarOpen)}>Menu</button>
           <span className="logo-text">IoT Dashboard</span>
         </div>
 
@@ -183,12 +182,12 @@ const Layout = ({ children }) => {
           </div>
 
           <button className="header-button" title="Search pages (Ctrl+K)" onClick={() => setSearchOpen(true)}>
-            🔍
+            Search
           </button>
 
           <div className="dropdown-container" ref={profileRef}>
             <button className="user-button" onClick={() => setProfileOpen(!profileOpen)}>
-              <div className="user-avatar-small">👤</div>
+              <div className="user-avatar-small">{userName.charAt(0)}</div>
             </button>
             {profileOpen && (
               <div className="profile-dropdown">
@@ -215,7 +214,7 @@ const Layout = ({ children }) => {
               className={`nav-item ${location.pathname === item.path ? 'nav-item-active' : ''}`}
               onClick={() => setSidebarOpen(false)}
             >
-              <span className="nav-icon">{item.icon}</span>
+              <span className="nav-icon" style={{ fontSize: 11, fontWeight: 'bold' }}>[{item.tag}]</span>
               <div className="nav-text">
                 <span className="nav-label">{item.label}</span>
               </div>
@@ -225,13 +224,13 @@ const Layout = ({ children }) => {
 
         <div className="sidebar-footer">
           <div className="user-info">
-            <div className="user-avatar">👤</div>
+            <div className="user-avatar">{userName.charAt(0)}</div>
             <div className="user-details">
               <div className="user-name">{userName}</div>
               <div className="user-email">{userEmail}</div>
             </div>
           </div>
-          <button className="sidebar-logout" onClick={handleLogout}>🚪</button>
+          <button className="sidebar-logout" onClick={handleLogout}>Exit</button>
         </div>
       </aside>
 
