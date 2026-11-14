@@ -243,7 +243,10 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 # Audit logging middleware
 # ---------------------------------------------------------------------------
-AUDIT_LOG_PATH = "/tmp/audit.log"
+# Audit middleware (cross-platform safe)
+# ---------------------------------------------------------------------------
+import tempfile
+AUDIT_LOG_PATH = os.path.join(tempfile.gettempdir(), "depin_audit.log")
 
 
 @app.middleware("http")
@@ -258,8 +261,11 @@ async def audit_logger(request: Request, call_next):
         f"|{response.status_code}"
         f"|{duration:.1f}ms\n"
     )
-    with open(AUDIT_LOG_PATH, "a", encoding="utf-8") as log_f:
-        log_f.write(log_line)
+    try:
+        with open(AUDIT_LOG_PATH, "a", encoding="utf-8") as log_f:
+            log_f.write(log_line)
+    except Exception:
+        pass
     return response
 
 
