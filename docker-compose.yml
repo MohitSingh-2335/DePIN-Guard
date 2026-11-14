@@ -1,38 +1,27 @@
-# docker-compose.yml — Lab mode (full stack)
-# For demo mode: run each service locally with the commands listed in Demo_Runbook.md
+# docker-compose.yml — DePIN-Guard Local Lab Stack
 
 services:
-
-  ai-service:
-    build: ./ai-service
-    ports:
-      - "10000:10000"
-    restart: unless-stopped
-    environment:
-      - FLASK_ENV=production
-      - PORT=10000
-
   auth-service:
     build: ./auth-service
+    container_name: depin-auth
     ports:
       - "8001:8001"
     restart: unless-stopped
     environment:
+      - MONGODB_URI=${MONGODB_URI}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-    volumes:
-      - auth_db:/app
 
   backend:
     build: ./backend
+    container_name: depin-backend
     ports:
       - "8000:8000"
     restart: unless-stopped
     environment:
       - DEPIN_API_KEY=${DEPIN_API_KEY}
-      - AI_SERVICE_URL=http://ai-service:10000/predict
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - MONGODB_URI=${MONGODB_URI}
     depends_on:
-      - ai-service
       - auth-service
 
   frontend:
@@ -42,22 +31,21 @@ services:
         - VITE_API_URL=${VITE_API_URL:-http://localhost:8000}
         - VITE_API_KEY=${DEPIN_API_KEY}
         - VITE_AUTH_URL=${VITE_AUTH_URL:-http://localhost:8001}
+    container_name: depin-frontend
     ports:
       - "5173:5173"
     restart: unless-stopped
     depends_on:
       - backend
 
-  iot-simulator:
-    build: ./iot-simulator
-    container_name: iot-simulator
-    environment:
-      - BACKEND_URL=http://backend:8000
-      - DEPIN_API_KEY=${DEPIN_API_KEY}
-      - SIMULATOR_MODE=synthetic
+  iot:
+    build: ./iot
+    container_name: depin-iot
     restart: unless-stopped
+    environment:
+      - BACKEND_URL=http://backend:8000/api/process_data
+      - DEPIN_API_KEY=${DEPIN_API_KEY}
+      - CONTINUOUS_LOOP=true
+      - STREAM_DELAY=2
     depends_on:
       - backend
-
-volumes:
-  auth_db:
