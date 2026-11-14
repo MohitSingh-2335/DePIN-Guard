@@ -7,7 +7,7 @@ import torch.nn as nn
 
 
 class LSTMAutoencoder(nn.Module):
-    def __init__(self, input_dim: int = 3, hidden_dim: int = 64):
+    def __init__(self, input_dim: int = 4, hidden_dim: int = 64):
         super().__init__()
         self.encoder = nn.LSTM(input_dim, hidden_dim, batch_first=True)
         self.decoder = nn.LSTM(hidden_dim, input_dim, batch_first=True)
@@ -25,7 +25,7 @@ class AnomalyDetector:
         self.scaler_path = scaler_path or os.path.join(base_dir, "scaler.save")
         self.threshold_path = threshold_path or os.path.join(base_dir, "threshold.txt")
 
-        self.model = LSTMAutoencoder(input_dim=3, hidden_dim=64)
+        self.model = LSTMAutoencoder(input_dim=4, hidden_dim=64)
         self.model.load_state_dict(torch.load(self.model_path, map_location=torch.device("cpu")))
         self.model.eval()
 
@@ -36,8 +36,8 @@ class AnomalyDetector:
 
         self.buffers = defaultdict(lambda: deque(maxlen=30))
 
-    def predict(self, device_id: str, temperature: float, vibration: float, power_usage: float) -> dict:
-        raw_reading = np.array([[float(temperature), float(vibration), float(power_usage)]])
+    def predict(self, device_id: str, temperature: float, vibration: float, power_usage: float, pressure: float = 0.0) -> dict:
+        raw_reading = np.array([[float(temperature), float(vibration), float(power_usage), float(pressure)]])
         scaled_reading = self.scaler.transform(raw_reading)[0]
 
         device_buf = self.buffers[device_id]
