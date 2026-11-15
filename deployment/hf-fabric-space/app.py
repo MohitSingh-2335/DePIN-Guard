@@ -355,6 +355,76 @@ def refresh_ledger_state():
     )
 
 
+@spaces.GPU
+def record_sensor_api(device_id: str, asset_type: str, data_hash: str, is_anomaly: bool, anomaly_score: float, threshold: float):
+    ledger = load_ledger()
+    prev_hash = ledger[-1]["hash"] if ledger else "0"
+    block_idx = len(ledger)
+    ts = datetime.now(timezone.utc).isoformat()
+    raw = f"{device_id}|{data_hash}|{is_anomaly}|{prev_hash}|{ts}"
+    block_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    block = {
+        "index": block_idx,
+        "block_number": block_idx,
+        "hash": block_hash,
+        "prev_hash": prev_hash,
+        "channel": "mychannel",
+        "timestamp": ts,
+        "type": "SENSOR_TELEMETRY_BLOCK",
+        "orgMSP": "ManufacturerMSP",
+        "device_id": str(device_id),
+        "asset_type": str(asset_type),
+        "data_hash": str(data_hash),
+        "is_anomaly": bool(is_anomaly),
+        "anomaly_score": float(anomaly_score),
+        "threshold": float(threshold),
+        "status": "VALID_COMMITTED"
+    }
+    ledger.append(block)
+    save_ledger(ledger)
+    return json.dumps({
+        "status": "SUCCESS",
+        "tx_id": block_hash[:32],
+        "block_number": block_idx,
+        "block_hash": block_hash
+    })
+
+
+@spaces.GPU
+def record_fraud_api(asset_id: str, fraud_type: str, confidence: float, evidence_hash: str):
+    ledger = load_ledger()
+    prev_hash = ledger[-1]["hash"] if ledger else "0"
+    block_idx = len(ledger)
+    ts = datetime.now(timezone.utc).isoformat()
+    raw = f"{asset_id}|{fraud_type}|{confidence}|{evidence_hash}|{prev_hash}|{ts}"
+    block_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    block = {
+        "index": block_idx,
+        "block_number": block_idx,
+        "hash": block_hash,
+        "prev_hash": prev_hash,
+        "channel": "mychannel",
+        "timestamp": ts,
+        "type": "FRAUD_SECURITY_FLAG",
+        "orgMSP": "MaintenanceMSP",
+        "asset_id": str(asset_id),
+        "fraud_type": str(fraud_type),
+        "confidence": float(confidence),
+        "evidence_hash": str(evidence_hash),
+        "status": "FLAGGED_FRAUD_BLOCK"
+    }
+    ledger.append(block)
+    save_ledger(ledger)
+    return json.dumps({
+        "status": "SUCCESS",
+        "tx_id": block_hash[:32],
+        "block_number": block_idx,
+        "block_hash": block_hash
+    })
+
+
 with gr.Blocks(title="DePIN-Guard Fabric Gateway") as demo:
     gr.Markdown("# Hyperledger Fabric 2.5 Consortium Explorer")
     gr.Markdown("Real-time native Hyperledger Fabric network running on Linux amd64 native binaries with zero Docker containers.")
@@ -375,7 +445,37 @@ with gr.Blocks(title="DePIN-Guard Fabric Gateway") as demo:
     refresh_btn.click(
         fn=refresh_ledger_state,
         inputs=[],
-        outputs=[total_blocks_text, fabric_ver_text, peer_text, orderer_text, blocks_table]
+        outputs=[total_blocks_text, fabric_ver_text, peer_text, orderer_text, blocks_table],
+        api_name="refresh"
+    )
+
+    # Hidden endpoints for backend API integration via Gradio Client
+    sensor_dev = gr.Textbox(visible=False)
+    sensor_asset = gr.Textbox(visible=False)
+    sensor_hash = gr.Textbox(visible=False)
+    sensor_anom = gr.Checkbox(visible=False)
+    sensor_score = gr.Number(visible=False)
+    sensor_thresh = gr.Number(visible=False)
+    sensor_out = gr.Textbox(visible=False)
+    sensor_btn = gr.Button("Submit Sensor Block", visible=False)
+    sensor_btn.click(
+        fn=record_sensor_api,
+        inputs=[sensor_dev, sensor_asset, sensor_hash, sensor_anom, sensor_score, sensor_thresh],
+        outputs=[sensor_out],
+        api_name="record_sensor"
+    )
+
+    fraud_asset = gr.Textbox(visible=False)
+    fraud_type = gr.Textbox(visible=False)
+    fraud_conf = gr.Number(visible=False)
+    fraud_ev = gr.Textbox(visible=False)
+    fraud_out = gr.Textbox(visible=False)
+    fraud_btn = gr.Button("Submit Fraud Block", visible=False)
+    fraud_btn.click(
+        fn=record_fraud_api,
+        inputs=[fraud_asset, fraud_type, fraud_conf, fraud_ev],
+        outputs=[fraud_out],
+        api_name="record_fraud"
     )
 
 if __name__ == "__main__":
