@@ -81,6 +81,8 @@ class SensorDataModel(BaseModel):
     vibration: float
     power_usage: float
     pressure: Optional[float] = None
+    is_anomaly: bool = False
+    status: str = "normal"
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
     class Config:
