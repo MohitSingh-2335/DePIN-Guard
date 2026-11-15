@@ -58,6 +58,7 @@ from routes.stream import broadcast_data, router as stream_router
 from routes.fraud import router as fraud_router
 from routes.blockchain_control import router as blockchain_router
 from routes.security import router as security_router
+from routes.auth import router as auth_router
 
 # ---------------------------------------------------------------------------
 # Environment
@@ -249,6 +250,8 @@ if HAS_SLOWAPI and _rate_limit_exceeded_handler is not None:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.include_router(stream_router)
+app.include_router(auth_router)
+app.include_router(auth_router, prefix="/api")
 
 # ---------------------------------------------------------------------------
 # Security helpers
