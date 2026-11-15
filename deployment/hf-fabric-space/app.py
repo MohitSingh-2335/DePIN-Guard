@@ -378,13 +378,8 @@ with gr.Blocks(title="DePIN-Guard Fabric Gateway") as demo:
         outputs=[total_blocks_text, fabric_ver_text, peer_text, orderer_text, blocks_table]
     )
 
-# Mount Gradio UI inside the FastAPI application
-app = gr.mount_gradio_app(app, demo, path="/")
-
-
 if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 7860))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    demo.launch()
+
 
 
