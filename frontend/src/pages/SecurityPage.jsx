@@ -3,14 +3,8 @@ import Layout from '../components/layout/Layout';
 import { authenticatedFetch, BACKEND_URL } from '../utils/api';
 import "./SecurityPage.css";
 
-const SECURITY_PASSWORD = import.meta.env.VITE_SECURITY_PASSWORD || 'depin2026';
-
 const SecurityPage = () => {
-  const [passwordInput, setPasswordInput] = useState('');
-  const [passwordError, setPasswordError] = useState('');
-  const [unlocked, setUnlocked] = useState(localStorage.getItem('security_unlocked') === 'true');
   const [currentUser, setCurrentUser] = useState('');
-  
   const [attackLog, setAttackLog] = useState([]);
   const [running, setRunning] = useState(false);
   const [rateStats, setRateStats] = useState({ total: 0, blocked: 0 });
@@ -19,23 +13,6 @@ const SecurityPage = () => {
     const userEmail = localStorage.getItem('userEmail') || localStorage.getItem('userName') || 'Operator';
     setCurrentUser(userEmail);
   }, []);
-
-  const handlePasswordSubmit = (e) => {
-    e.preventDefault();
-    if (passwordInput === SECURITY_PASSWORD || passwordInput === 'depin2026' || passwordInput === 'admin') {
-      localStorage.setItem('security_unlocked', 'true');
-      setUnlocked(true);
-      setPasswordError('');
-    } else {
-      setPasswordError('Invalid security password. Access denied.');
-      setPasswordInput('');
-    }
-  };
-
-  const handleLock = () => {
-    localStorage.removeItem('security_unlocked');
-    setUnlocked(false);
-  };
 
   const securityControls = [
     { tag: 'JWT', name: 'JWT Authentication', desc: 'Bearer tokens with 1-hour expiry', status: 'active', detail: 'HS256 algorithm - Issued by auth-service' },
@@ -103,33 +80,6 @@ const SecurityPage = () => {
     setRunning(false);
   };
 
-  if (!unlocked) {
-    return (
-      <Layout>
-        <div className="security-lock-screen">
-          <div className="security-lock-card">
-            <h2 className="lock-title">Security Verification</h2>
-            <p className="lock-subtitle">
-              Enter security password to access configuration.
-            </p>
-            <form onSubmit={handlePasswordSubmit} className="lock-form">
-              <input
-                type="password"
-                className="lock-input"
-                placeholder="Enter security password..."
-                value={passwordInput}
-                onChange={(e) => setPasswordInput(e.target.value)}
-                autoFocus
-              />
-              {passwordError && <p className="lock-error">{passwordError}</p>}
-              <button type="submit" className="lock-btn">Unlock</button>
-            </form>
-          </div>
-        </div>
-      </Layout>
-    );
-  }
-
   return (
     <Layout>
       <div className="security-container">
@@ -140,7 +90,6 @@ const SecurityPage = () => {
           </div>
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
             <div className="security-overall-badge"><span className="badge-dot" /> All Systems Secure</div>
-            <button className="lock-btn" style={{ padding: '6px 14px', fontSize: 12 }} onClick={handleLock}>Lock</button>
           </div>
         </div>
 
