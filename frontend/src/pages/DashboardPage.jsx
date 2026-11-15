@@ -11,7 +11,7 @@ import './DashboardPage.css';
 
 const CustomTooltip = ({ active, payload, label, timePeriod }) => {
   if (!active || !payload || !payload.length) return null;
-  const scans  = payload.find(p => p.dataKey === 'raw');
+  const scans = payload.find(p => p.dataKey === 'raw');
   const alerts = payload.find(p => p.dataKey === 'alerts');
   return (
     <div style={{
@@ -79,16 +79,16 @@ const MACHINE_DIRECTORY = [
 
 const DashboardPage = () => {
   const [streamConnected, setStreamConnected] = useState(false);
-  const [loading, setLoading]                 = useState(true);
-  const [refreshing, setRefreshing]           = useState(false);
-  const [stats, setStats]                     = useState({ activeDevices: 33, totalData: null, alerts: null, uptime: 99.9 });
-  const [recentData, setRecentData]           = useState([]);
-  const [timePeriod, setTimePeriod]           = useState('24h');
-  const [chartData, setChartData]             = useState([]);
-  const [showAllSensors, setShowAllSensors]   = useState(false);
-  const [deviceFilter, setDeviceFilter]       = useState('all');
-  const [deviceSearch, setDeviceSearch]       = useState('');
-  const [lastLiveTick, setLastLiveTick]       = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [stats, setStats] = useState({ activeDevices: 33, totalData: null, alerts: null, uptime: 99.9 });
+  const [recentData, setRecentData] = useState([]);
+  const [timePeriod, setTimePeriod] = useState('24h');
+  const [chartData, setChartData] = useState([]);
+  const [showAllSensors, setShowAllSensors] = useState(false);
+  const [deviceFilter, setDeviceFilter] = useState('all');
+  const [deviceSearch, setDeviceSearch] = useState('');
+  const [lastLiveTick, setLastLiveTick] = useState(null);
   const SENSOR_PREVIEW = 5;
   const sensorRef = useRef(null);
 
@@ -126,29 +126,29 @@ const DashboardPage = () => {
       if (response && response.ok) {
         const json = await response.json();
         setStats({
-          activeDevices: json.stats?.active_devices    ?? 33,
-          totalData:     json.stats?.total_scans     ?? 0,
-          alerts:        json.stats?.anomalies ?? 0,
-          uptime:        json.stats?.uptime    ?? 99.9,
+          activeDevices: json.stats?.active_devices ?? 33,
+          totalData: json.stats?.total_scans ?? 0,
+          alerts: json.stats?.anomalies ?? 0,
+          uptime: json.stats?.uptime ?? 99.9,
         });
         const history = json.recent_data ?? [];
         setRecentData(history.length > 0
           ? history.map((rec, i) => {
-              const machineMeta = MACHINE_DIRECTORY.find(m => m.id === rec.device);
-              return {
-                id:     rec.id ?? i,
-                device: rec.device ?? 'Unknown',
-                machine_name: rec.machine_name || (machineMeta ? machineMeta.name : rec.device),
-                value:  rec.temp ?? 0,
-                vib:    rec.vib ?? 0,
-                pwr:    rec.pwr ?? 0,
-                pressure: rec.pressure ?? 0,
-                unit:   '°C',
-                status: rec.status ?? 'normal',
-                time:   rec.timestamp ? new Date(rec.timestamp).toLocaleTimeString() : '—',
-                status_short: rec.status_short,
-              };
-            })
+            const machineMeta = MACHINE_DIRECTORY.find(m => m.id === rec.device);
+            return {
+              id: rec.id ?? i,
+              device: rec.device ?? 'Unknown',
+              machine_name: rec.machine_name || (machineMeta ? machineMeta.name : rec.device),
+              value: rec.temp ?? 0,
+              vib: rec.vib ?? 0,
+              pwr: rec.pwr ?? 0,
+              pressure: rec.pressure ?? 0,
+              unit: '°C',
+              status: rec.status ?? 'normal',
+              time: rec.timestamp ? new Date(rec.timestamp).toLocaleTimeString() : '—',
+              status_short: rec.status_short,
+            };
+          })
           : []
         );
       }
@@ -162,7 +162,7 @@ const DashboardPage = () => {
     try {
       const response = await authenticatedFetch('/api/history/all');
       if (response && response.ok) {
-        const json    = await response.json();
+        const json = await response.json();
         const history = json.history ?? [];
         if (history.length === 0) return;
 
@@ -189,10 +189,10 @@ const DashboardPage = () => {
         }
 
         const maxRaw = Math.max(...buckets.map(b => b.raw), 1);
-        const avg    = buckets.reduce((s, b) => s + b.raw, 0) / buckets.length;
+        const avg = buckets.reduce((s, b) => s + b.raw, 0) / buckets.length;
         setChartData(buckets.map(b => ({
-          label:  b.label,
-          raw:    b.raw,
+          label: b.label,
+          raw: b.raw,
           alerts: b.alerts,
           isPeak: b.raw === maxRaw && b.raw > 0,
           isHigh: b.raw > avg * 1.5,
@@ -206,7 +206,7 @@ const DashboardPage = () => {
   useEffect(() => {
     fetchDashboardData();
     fetchChartData(timePeriod);
-    const dashInterval  = setInterval(fetchDashboardData, 3000);
+    const dashInterval = setInterval(fetchDashboardData, 3000);
     const chartInterval = setInterval(() => fetchChartData(timePeriod), 8000);
     return () => { clearInterval(dashInterval); clearInterval(chartInterval); };
   }, [timePeriod]);
@@ -225,10 +225,10 @@ const DashboardPage = () => {
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'normal':   return '#22c55e';
-      case 'warning':  return '#f59e0b';
+      case 'normal': return '#22c55e';
+      case 'warning': return '#f59e0b';
       case 'critical': return '#ef4444';
-      default:         return '#6b7280';
+      default: return '#6b7280';
     }
   };
 
@@ -240,14 +240,14 @@ const DashboardPage = () => {
 
   const getActivityLabel = (period) => {
     if (period === '24h') return 'Sensor scans & alerts per 2-hour block';
-    if (period === '7d')  return 'Total scans & alerts per day';
+    if (period === '7d') return 'Total scans & alerts per day';
     return 'Scans & alerts per day (last 30 days)';
   };
 
-  const totalScans  = chartData.reduce((s, d) => s + d.raw, 0);
+  const totalScans = chartData.reduce((s, d) => s + d.raw, 0);
   const totalAlerts = chartData.reduce((s, d) => s + d.alerts, 0);
-  const peakLabel   = chartData.length ? chartData.reduce((a, b) => (b.raw > a.raw ? b : a), chartData[0]).label : '—';
-  const avgScans    = chartData.length ? Math.round(totalScans / chartData.length) : 0;
+  const peakLabel = chartData.length ? chartData.reduce((a, b) => (b.raw > a.raw ? b : a), chartData[0]).label : '—';
+  const avgScans = chartData.length ? Math.round(totalScans / chartData.length) : 0;
 
   const visibleSensors = showAllSensors ? recentData : recentData.slice(0, SENSOR_PREVIEW);
 
@@ -320,7 +320,7 @@ const DashboardPage = () => {
           <div className="stat-card">
             <div className="stat-icon" style={{ background: 'linear-gradient(135deg,#0ea5e9,#0284c7)' }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="white" width="20">
-                <path strokeWidth="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/>
+                <path strokeWidth="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
               </svg>
             </div>
             <div className="stat-content">
@@ -331,7 +331,7 @@ const DashboardPage = () => {
           <div className="stat-card">
             <div className="stat-icon" style={{ background: 'linear-gradient(135deg,#8b5cf6,#7c3aed)' }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="white" width="20">
-                <path strokeWidth="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/>
+                <path strokeWidth="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
               </svg>
             </div>
             <div className="stat-content">
@@ -342,7 +342,7 @@ const DashboardPage = () => {
           <div className="stat-card">
             <div className="stat-icon" style={{ background: 'linear-gradient(135deg,#f59e0b,#d97706)' }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="white" width="20">
-                <path strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+                <path strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
               </svg>
             </div>
             <div className="stat-content">
@@ -353,7 +353,7 @@ const DashboardPage = () => {
           <div className="stat-card">
             <div className="stat-icon" style={{ background: 'linear-gradient(135deg,#22c55e,#16a34a)' }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="white" width="20">
-                <path strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                <path strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
             </div>
             <div className="stat-content">
@@ -482,10 +482,10 @@ const DashboardPage = () => {
                   power_usage={Number(data.pwr)}
                   recommendations={
                     data.status === 'critical'
-                      ? ['Stop machine immediately and alert maintenance team','Check cooling system and ventilation','Do not restart until temperature drops below 70°C']
+                      ? ['Stop machine immediately and alert maintenance team', 'Check cooling system and ventilation', 'Do not restart until temperature drops below 70°C']
                       : data.status === 'warning'
-                      ? ['Schedule inspection within the next 2 hours','Check cooling system for blockages','Reduce machine load if possible']
-                      : ['Continue normal operation','Next scheduled maintenance on time','All telemetry within nominal thresholds']
+                        ? ['Schedule inspection within the next 2 hours', 'Check cooling system for blockages', 'Reduce machine load if possible']
+                        : ['Continue normal operation', 'Next scheduled maintenance on time', 'All telemetry within nominal thresholds']
                   }
                   timestamp={data.time}
                 />
@@ -535,10 +535,10 @@ const DashboardPage = () => {
             {chartData.length === 0 ? (
               <div className="chart-empty">
                 <svg viewBox="0 0 48 48" width="40" height="40" fill="none">
-                  <rect x="4"  y="28" width="8"  height="16" rx="2" fill="rgba(99,102,241,0.3)"/>
-                  <rect x="16" y="18" width="8"  height="26" rx="2" fill="rgba(99,102,241,0.3)"/>
-                  <rect x="28" y="22" width="8"  height="22" rx="2" fill="rgba(99,102,241,0.3)"/>
-                  <rect x="40" y="10" width="8"  height="34" rx="2" fill="rgba(99,102,241,0.3)"/>
+                  <rect x="4" y="28" width="8" height="16" rx="2" fill="rgba(99,102,241,0.3)" />
+                  <rect x="16" y="18" width="8" height="26" rx="2" fill="rgba(99,102,241,0.3)" />
+                  <rect x="28" y="22" width="8" height="22" rx="2" fill="rgba(99,102,241,0.3)" />
+                  <rect x="40" y="10" width="8" height="34" rx="2" fill="rgba(99,102,241,0.3)" />
                 </svg>
                 <p>No activity data yet</p>
                 <span>Data will appear as devices send readings</span>
