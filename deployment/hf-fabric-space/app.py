@@ -343,20 +343,29 @@ with gr.Blocks(title="DePIN-Guard Fabric Gateway") as demo:
     gr.Markdown("Real-time native Hyperledger Fabric network running on Linux amd64 native binaries with zero Docker containers.")
 
     with gr.Row():
-        total_blocks_text = gr.Textbox(label="Total Blocks", value=lambda: str(len(load_ledger())), interactive=False)
-        fabric_ver_text = gr.Textbox(label="Fabric Binary Version", value=lambda: fabric_state["version"], interactive=False)
-        peer_text = gr.Textbox(label="Peer Status", value=lambda: fabric_state["peer_status"], interactive=False)
-        orderer_text = gr.Textbox(label="Orderer Status", value=lambda: fabric_state["orderer_status"], interactive=False)
+        total_blocks_text = gr.Textbox(label="Total Blocks", value=str(len(load_ledger())), interactive=False)
+        fabric_ver_text = gr.Textbox(label="Fabric Binary Version", value=fabric_state["version"], interactive=False)
+        peer_text = gr.Textbox(label="Peer Status", value=fabric_state["peer_status"], interactive=False)
+        orderer_text = gr.Textbox(label="Orderer Status", value=fabric_state["orderer_status"], interactive=False)
 
     blocks_table = gr.Dataframe(
         headers=["Block #", "Org MSP", "Transaction / Action", "Block Hash", "Prev Hash", "Status"],
-        value=get_blocks_table,
+        value=get_blocks_table(),
         interactive=False
     )
 
+    def on_refresh():
+        return (
+            str(len(load_ledger())),
+            fabric_state["version"],
+            fabric_state["peer_status"],
+            fabric_state["orderer_status"],
+            get_blocks_table()
+        )
+
     refresh_btn = gr.Button("Refresh Blockchain Ledger")
     refresh_btn.click(
-        fn=lambda: (str(len(load_ledger())), fabric_state["version"], fabric_state["peer_status"], fabric_state["orderer_status"], get_blocks_table()),
+        fn=on_refresh,
         inputs=[],
         outputs=[total_blocks_text, fabric_ver_text, peer_text, orderer_text, blocks_table]
     )
