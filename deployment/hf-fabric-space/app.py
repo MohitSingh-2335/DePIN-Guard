@@ -16,6 +16,15 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import gradio as gr
 
+# ZeroGPU decorator for Hugging Face Free ZeroGPU tier
+try:
+    import spaces
+    gpu_decorator = spaces.GPU
+except ImportError:
+    def gpu_decorator(fn):
+        return fn
+
+
 # ---------------------------------------------------------------------------
 # Native Hyperledger Fabric 2.5 Binaries Manager (Zero Docker)
 # ---------------------------------------------------------------------------
@@ -358,6 +367,7 @@ with gr.Blocks(title="DePIN-Guard Fabric Gateway") as demo:
         interactive=False
     )
 
+    @gpu_decorator
     def on_refresh():
         return (
             str(len(load_ledger())),
