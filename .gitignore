@@ -96,5 +96,4 @@ test_backend.py
 users.db
 
 # --- Local workspace artifacts ---
-.github/
 NOTES/
