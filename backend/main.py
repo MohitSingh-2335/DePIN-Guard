@@ -676,18 +676,23 @@ async def _execute_telemetry_pipeline(data: SensorData) -> dict:
         vibration=data.vibration,
         power_usage=data.power_usage,
         pressure=data.pressure,
+        is_anomaly=is_anomaly,
+        status="critical" if is_anomaly else "normal",
     )
     await save_sensor_data(sensor_doc)
 
     # --- Broadcast to WebSocket clients ---
     await broadcast_data({
-        "device_id":   data.device_id,
-        "temperature": data.temperature,
-        "vibration":   data.vibration,
-        "power_usage": data.power_usage,
-        "pressure":    data.pressure,
-        "is_anomaly":  is_anomaly,
-        "timestamp":   datetime.now().isoformat(),
+        "device_id":    data.device_id,
+        "machine_name": data.machine_name or data.device_id,
+        "temperature":  data.temperature,
+        "vibration":    data.vibration,
+        "power_usage":  data.power_usage,
+        "pressure":     data.pressure,
+        "is_anomaly":   is_anomaly,
+        "status":       "critical" if is_anomaly else "normal",
+        "status_short": data.status_short or ("Operating normally" if not is_anomaly else "Abnormal reading detected"),
+        "timestamp":    datetime.now().isoformat(),
     })
 
     # --- Update in-memory counters ---
@@ -839,19 +844,26 @@ async def autonomous_feeder_loop():
         print("[AutonomousFeeder] Feeder disabled via AUTONOMOUS_FEEDER=false")
         return
 
-    interval = float(os.getenv("FEEDER_INTERVAL_SECONDS", "5.0"))
+    interval = float(os.getenv("FEEDER_INTERVAL_SECONDS", "2.0"))
     try:
         from iot.data_ingestor import load_industrial_datasets, DEVICES, format_status
         records = load_industrial_datasets()
     except Exception as exc:
-        print(f"[AutonomousFeeder] Could not load industrial datasets ({exc})")
-        return
+        print(f"[AutonomousFeeder] Notice loading industrial datasets ({exc})")
+        records = []
 
     if not records:
-        print("[AutonomousFeeder] No records available in dataset.")
+        try:
+            from iot.data_ingestor import generate_synthetic_record, DEVICES, format_status
+            records = [generate_synthetic_record() for _ in range(500)]
+        except Exception:
+            records = []
+
+    if not records:
+        print("[AutonomousFeeder] Critical: No records available.")
         return
 
-    print(f"[AutonomousFeeder] Started continuous 24/7 autonomous loop ({len(records)} records, {interval}s interval)")
+    print(f"[AutonomousFeeder] Continuous 24/7 autonomous loop online ({len(records)} records, {interval}s interval)")
     rec_idx = 0
     dev_idx = 0
 
@@ -879,6 +891,8 @@ async def autonomous_feeder_loop():
             result = await _execute_telemetry_pipeline(sensor_obj)
             if result.get("anomaly"):
                 print(f"[AutonomousFeeder] ANOMALY on {device_id} -> Block committed to Fabric: {result.get('tx_hash')[:16]}...")
+            if dev_idx % 30 == 0:
+                print(f"[AutonomousFeeder] Continuous pulse | total_scans={system_state['dashboard']['total_scans']} | active_devices=33")
         except asyncio.CancelledError:
             print("[AutonomousFeeder] Stopped cleanly.")
             break
