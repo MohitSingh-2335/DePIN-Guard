@@ -1,4 +1,4 @@
-﻿# --- Python (Global) ---
+# --- Python (Global) ---
 __pycache__/
 *.py[cod]
 *$py.class
