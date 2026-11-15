@@ -1,64 +1,78 @@
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GCNConv
- 
- 
-class FraudGNN(torch.nn.Module):
+
+
+class GraphConvolution(nn.Module):
     """
-    Two-layer Graph Convolutional Network for fraud detection.
- 
-    Forward pass:
-        GCNConv(in_features → hidden_dim)  → ReLU → Dropout(0.3)
-        GCNConv(hidden_dim  → num_classes) → log_softmax
- 
-    Args:
-        in_features  (int): Number of input node features. Default 4.
-        hidden_dim   (int): Hidden layer width.            Default 16.
-        num_classes  (int): Number of output classes.      Default 2.
+    Standard Graph Convolutional layer (Kipf & Welling).
+    Performs message-passing: H' = A_norm * H * W
     """
- 
+    def __init__(self, in_features: int, out_features: int):
+        super().__init__()
+        self.linear = nn.Linear(in_features, out_features)
+
+    def forward(self, x: torch.Tensor, adj_norm: torch.Tensor) -> torch.Tensor:
+        # x: (N_nodes, in_features)
+        # adj_norm: (N_nodes, N_nodes) normalized adjacency matrix
+        support = self.linear(x)
+        return torch.matmul(adj_norm, support)
+
+
+class DeviceGCN(nn.Module):
+    """
+    2-Layer Graph Convolutional Network for industrial machine correlation.
+    Inputs: 33 factory machines with 4 physical sensor features.
+    Outputs: 2 classes (Normal=0, Anomaly=1) for each machine.
+    """
     def __init__(self, in_features: int = 4, hidden_dim: int = 16, num_classes: int = 2):
         super().__init__()
-        self.conv1 = GCNConv(in_features, hidden_dim)
-        self.conv2 = GCNConv(hidden_dim, num_classes)
- 
-    def forward(self, data):
-        x, edge_index = data.x, data.edge_index
- 
-        # Layer 1: graph convolution + activation
-        x = F.relu(self.conv1(x, edge_index))
- 
-        # Regularisation: dropout during training only
-        x = F.dropout(x, p=0.3, training=self.training)
- 
-        # Layer 2: graph convolution → class logits
-        x = self.conv2(x, edge_index)
- 
-        # Log-softmax for use with F.nll_loss
-        return F.log_softmax(x, dim=1)
- 
- 
-# ---------------------------------------------------------------------------
-# Self-test — run: python gnn_model.py
-# Expected output:
-#   Output shape: torch.Size([5, 2])
-#   FraudGNN loaded successfully!
-# ---------------------------------------------------------------------------
+        self.gc1 = GraphConvolution(in_features, hidden_dim)
+        self.gc2 = GraphConvolution(hidden_dim, num_classes)
+        self.dropout = nn.Dropout(p=0.2)
+
+    def forward(self, x: torch.Tensor, adj_norm: torch.Tensor) -> torch.Tensor:
+        h1 = F.relu(self.gc1(x, adj_norm))
+        h1 = self.dropout(h1)
+        out = self.gc2(h1, adj_norm)
+        return F.log_softmax(out, dim=1)
+
+
+def build_factory_adjacency_matrix(num_devices: int = 33) -> torch.Tensor:
+    """
+    Constructs normalized adjacency matrix representing physical connections
+    between machines on the factory floor (assembly lines and utility loops).
+    """
+    A = torch.eye(num_devices)
+    # Connect sequential pipeline machines
+    for i in range(num_devices - 1):
+        A[i, i + 1] = 1.0
+        A[i + 1, i] = 1.0
+
+    # Utility loops (Compressor -> Press, Chiller -> Molder, Boiler -> Furnace, Pump -> Valve)
+    utility_pairs = [(16, 15), (30, 0), (22, 13), (32, 12)]
+    for u, v in utility_pairs:
+        if u < num_devices and v < num_devices:
+            A[u, v] = 1.0
+            A[v, u] = 1.0
+
+    # Symmetric normalization: D^(-1/2) * A * D^(-1/2)
+    degrees = torch.sum(A, dim=1)
+    d_inv_sqrt = torch.pow(degrees, -0.5)
+    d_inv_sqrt[torch.isinf(d_inv_sqrt)] = 0.0
+    D_mat = torch.diag(d_inv_sqrt)
+    adj_norm = torch.matmul(torch.matmul(D_mat, A), D_mat)
+    return adj_norm
+
+
 if __name__ == "__main__":
-    from torch_geometric.data import Data
- 
-    # Build a tiny dummy graph: 5 nodes, 4 features each, 3 directed edges
-    model = FraudGNN(in_features=4, hidden_dim=16, num_classes=2)
- 
-    test_data = Data(
-        x=torch.zeros((5, 4)),                                        # 5 nodes × 4 features
-        edge_index=torch.tensor([[0, 1, 2], [1, 2, 3]], dtype=torch.long)  # 3 edges
-    )
- 
-    # Run in eval mode (disables dropout)
+    # Self-test
+    adj = build_factory_adjacency_matrix(33)
+    x = torch.randn(33, 4)
+    model = DeviceGCN(in_features=4, hidden_dim=16, num_classes=2)
     model.eval()
     with torch.no_grad():
-        out = model(test_data)
- 
-    print("Output shape:", out.shape)   # expected: torch.Size([5, 2])
-    print("FraudGNN loaded successfully!")
+        out = model(x, adj)
+    print("DeviceGCN output shape:", out.shape)
+    print("Device 0 anomaly prob:", torch.exp(out[0])[1].item())
+    print("DeviceGCN architecture verified successfully.")
