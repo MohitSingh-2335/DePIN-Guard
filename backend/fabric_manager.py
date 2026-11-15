@@ -80,7 +80,7 @@ class FabricManager:
         if FABRIC_GATEWAY_URL:
             try:
                 import requests
-                res = requests.get(f"{FABRIC_GATEWAY_URL}/health", timeout=3)
+                res = requests.get(f"{FABRIC_GATEWAY_URL}/", timeout=4)
                 if res.status_code == 200:
                     return {
                         "ready": True,
@@ -116,27 +116,30 @@ class FabricManager:
                 from datetime import datetime, timezone
                 if function_name == "RecordSensorData" and len(args_list) >= 4:
                     payload = {
-                        "device_id": args_list[0],
-                        "asset_type": args_list[1] if len(args_list) > 1 else "Industrial Machine",
-                        "data_hash": args_list[2] if len(args_list) > 2 else "hash",
-                        "is_anomaly": bool(args_list[3]) if len(args_list) > 3 else False,
-                        "anomaly_score": float(args_list[4]) if len(args_list) > 4 else 0.0,
-                        "threshold": float(args_list[5]) if len(args_list) > 5 else 0.18,
-                        "timestamp": datetime.now(timezone.utc).isoformat()
+                        "data": [
+                            str(args_list[0]),
+                            str(args_list[1]) if len(args_list) > 1 else "Industrial Machine",
+                            str(args_list[2]) if len(args_list) > 2 else "hash",
+                            bool(args_list[3]) if len(args_list) > 3 else False,
+                            float(args_list[4]) if len(args_list) > 4 else 0.0,
+                            float(args_list[5]) if len(args_list) > 5 else 0.18
+                        ]
                     }
-                    res = requests.post(f"{FABRIC_GATEWAY_URL}/api/record-sensor", json=payload, timeout=5)
+                    res = requests.post(f"{FABRIC_GATEWAY_URL}/gradio_api/call/record_sensor", json=payload, timeout=8)
                     if res.status_code == 200:
-                        return res.json()
+                        return {"status": "success", "tx_id": res.json().get("event_id", "committed"), "mode": "cloud_fabric"}
                 elif function_name == "RecordFraudFlag" and len(args_list) >= 2:
                     payload = {
-                        "asset_id": args_list[0],
-                        "fraud_type": args_list[1],
-                        "confidence": 0.95,
-                        "evidence_hash": args_list[2] if len(args_list) > 2 else "evidence"
+                        "data": [
+                            str(args_list[0]),
+                            str(args_list[1]),
+                            float(args_list[2]) if len(args_list) > 2 else 0.95,
+                            str(args_list[3]) if len(args_list) > 3 else "evidence"
+                        ]
                     }
-                    res = requests.post(f"{FABRIC_GATEWAY_URL}/api/record-fraud", json=payload, timeout=5)
+                    res = requests.post(f"{FABRIC_GATEWAY_URL}/gradio_api/call/record_fraud", json=payload, timeout=8)
                     if res.status_code == 200:
-                        return res.json()
+                        return {"status": "success", "tx_id": res.json().get("event_id", "committed"), "mode": "cloud_fabric"}
             except Exception as e:
                 print(f"Cloud Fabric Gateway exception: {e}")
 
