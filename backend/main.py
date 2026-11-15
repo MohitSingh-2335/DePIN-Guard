@@ -1,6 +1,7 @@
 import time as _time
 import os
 import sys
+import asyncio
 
 _backend_dir = os.path.dirname(os.path.abspath(__file__))
 if _backend_dir not in sys.path:
@@ -62,6 +63,8 @@ from routes.security import router as security_router
 # Environment
 # ---------------------------------------------------------------------------
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
 load_dotenv(os.path.join(ROOT_DIR, ".env"))
 
 API_KEY            = os.getenv("DEPIN_API_KEY")
@@ -222,8 +225,16 @@ async def lifespan(app: FastAPI):
         scheduler.start()
         print(f"[Scheduler] Started - GNN trigger every 5 minutes | threshold={_ANOMALY_THRESHOLD}")
     
+    feeder_task = asyncio.create_task(autonomous_feeder_loop())
+
     yield
-    
+
+    feeder_task.cancel()
+    try:
+        await feeder_task
+    except asyncio.CancelledError:
+        pass
+
     if scheduler is not None:
         scheduler.shutdown()
     await close_mongo_connection()
@@ -613,204 +624,255 @@ async def get_all_history():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+async def _execute_telemetry_pipeline(data: SensorData) -> dict:
+    is_anomaly     = False
+    recommendation = "Normal Operation"
+    ai_source      = "model"
+    # In-memory AI inference via PyTorch LSTM Autoencoder
+    ai_result = anomaly_detector.predict(
+        device_id=data.device_id,
+        temperature=data.temperature,
+        vibration=data.vibration,
+        power_usage=data.power_usage,
+        pressure=data.pressure
+    )
+    is_anomaly = ai_result.get("is_anomaly", False)
+    ai_source  = "in_memory_lstm"
+
+    # --- Save to MongoDB ---
+    sensor_doc = SensorDataModel(
+        device_id=data.device_id,
+        temperature=data.temperature,
+        vibration=data.vibration,
+        power_usage=data.power_usage,
+        pressure=data.pressure,
+    )
+    await save_sensor_data(sensor_doc)
+
+    # --- Broadcast to WebSocket clients ---
+    await broadcast_data({
+        "device_id":   data.device_id,
+        "temperature": data.temperature,
+        "vibration":   data.vibration,
+        "power_usage": data.power_usage,
+        "pressure":    data.pressure,
+        "is_anomaly":  is_anomaly,
+        "timestamp":   datetime.now().isoformat(),
+    })
+
+    # --- Update in-memory counters ---
+    system_state["dashboard"]["total_scans"] += 1
+    system_state["ai"]["total_analyses"] += 1
+
+    status_label = "normal"
+    tx_hash      = "---"
+
+    # --- Anomaly path ---
+    if is_anomaly:
+        if data.temperature > 100:
+            recommendation = "CRITICAL: Overheating detected. Check cooling system."
+        elif data.vibration > 10:
+            recommendation = "WARNING: Severe mechanical vibration. Check mounting."
+        else:
+            recommendation = "ALERT: AI model detected anomaly pattern."
+
+        status_label = "critical"
+        system_state["dashboard"]["anomalies"]       += 1
+        system_state["ai"]["anomalies_found"]        += 1
+        system_state["blockchain"]["total_blocks"]   += 1
+        system_state["blockchain"]["transactions"]   += 1
+
+        # --- Save to MongoDB fraud alerts ---
+        fraud_alert = FraudAlertModel(
+            device_id=data.device_id,
+            alert_type="anomaly",
+            severity="high",
+            message=recommendation,
+            anomaly_data={
+                "temperature": data.temperature,
+                "vibration": data.vibration,
+                "power_usage": data.power_usage,
+                "ai_loss": ai_result.get("loss"),
+                "ai_threshold": ai_result.get("threshold"),
+            }
+        )
+        await save_fraud_alert(fraud_alert)
+
+        # Build data hash for blockchain record
+        data_string   = json.dumps(data.dict(), sort_keys=True)
+        tx_hash       = hashlib.sha256(data_string.encode()).hexdigest()
+        previous_hash = (
+            system_state["blockchain"]["recent_blocks"][0]["hash"]
+            if system_state["blockchain"]["recent_blocks"]
+            else "0000000000000000"
+        )
+
+        block_record = {
+            "index":     system_state["blockchain"]["total_blocks"],
+            "id":        system_state["blockchain"]["total_blocks"],
+            "hash":      tx_hash,
+            "prev_hash": previous_hash,
+            "merkle_root": hashlib.sha256(f"{data.device_id}:{tx_hash}".encode()).hexdigest(),
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "status":    "confirmed",
+            "validator": "Consortium-Raft-Node-1",
+            "transactions": 1,
+        }
+        system_state["blockchain"]["recent_blocks"].insert(0, block_record)
+        system_state["blockchain"]["recent_blocks"] = \
+            system_state["blockchain"]["recent_blocks"][:10]
+
+        from database import db as mongo_db
+        if mongo_db is not None:
+            try:
+                await mongo_db["blockchain_blocks"].insert_one(dict(block_record))
+            except Exception:
+                pass
+
+        ai_record = {
+            "confidence": 95.0,
+            "device":         data.device_id,
+            "recommendation": recommendation,
+            "timestamp":      datetime.now().strftime("%H:%M:%S"),
+            "severity":       "high",
+        }
+
+        confidence_raw = ai_result.get("anomaly_score")
+        if confidence_raw is None:
+            confidence_raw = ai_result.get("loss", 0.95)
+        try:
+            confidence_value = float(confidence_raw)
+            if confidence_value <= 1.0:
+                confidence_value *= 100.0
+            ai_record["confidence"] = round(max(0.0, min(confidence_value, 100.0)), 2)
+        except Exception:
+            pass
+
+        system_state["ai"]["recent_results"].insert(0, ai_record)
+        system_state["ai"]["recent_results"] = \
+            system_state["ai"]["recent_results"][:10]
+
+        # --- Write to Hyperledger Fabric ---
+        if BLOCKCHAIN_ACTIVE:
+            try:
+                feature_keys_json = json.dumps(["temperature", "vibration", "power_usage"])
+                anomaly_score     = str(round(
+                    ai_result.get("anomaly_score", ai_result.get("loss", 0.0)), 6
+                ))
+                tx_result = fabric_client.submit_transaction("RecordSensorData", [
+                    data.device_id,
+                    "INDUSTRIAL_SENSOR",
+                    tx_hash,
+                    str(is_anomaly).lower(),
+                    anomaly_score,
+                    str(_ANOMALY_THRESHOLD),
+                    feature_keys_json,
+                    data.timestamp,
+                ])
+                if tx_result.get("status") not in ("success", "simulated"):
+                    print(f"Ledger write non-fatal notice: {tx_result.get('error')}")
+            except Exception as exc:
+                print(f"Ledger write notice (non-fatal): {exc}")
+
+    # --- Append to history (in-memory storage) ---
+    history_record = {
+        "device":    data.device_id,
+        "hash":      tx_hash,
+        "value":     f"{data.temperature}C",
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "status":    status_label,
+        "temp":      data.temperature,
+        "vib":       data.vibration,
+        "pwr":       data.power_usage,
+        "anomaly":   is_anomaly,
+        "ai_source": ai_source,
+        "ai_error":  None,
+        "recommendation": recommendation,
+        "id":        system_state["dashboard"]["total_scans"],
+    }
+
+    system_state["history"].append(history_record)
+    if len(system_state["history"]) > 100:
+        system_state["history"].pop(0)
+
+    return {
+        "status":    "Processed",
+        "anomaly":   is_anomaly,
+        "ai_source": ai_source,
+        "ai_error":  None,
+        "tx_hash":   tx_hash if is_anomaly else None,
+    }
+
+
+async def autonomous_feeder_loop():
+    if os.getenv("AUTONOMOUS_FEEDER", "true").lower() not in ("true", "1", "yes"):
+        print("[AutonomousFeeder] Feeder disabled via AUTONOMOUS_FEEDER=false")
+        return
+
+    interval = float(os.getenv("FEEDER_INTERVAL_SECONDS", "5.0"))
+    try:
+        from iot.data_ingestor import load_industrial_datasets, DEVICES, format_status
+        records = load_industrial_datasets()
+    except Exception as exc:
+        print(f"[AutonomousFeeder] Could not load industrial datasets ({exc})")
+        return
+
+    if not records:
+        print("[AutonomousFeeder] No records available in dataset.")
+        return
+
+    print(f"[AutonomousFeeder] Started continuous 24/7 autonomous loop ({len(records)} records, {interval}s interval)")
+    rec_idx = 0
+    dev_idx = 0
+
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            rec = records[rec_idx]
+            device_id = DEVICES[dev_idx % len(DEVICES)]
+            rec_idx = (rec_idx + 1) % len(records)
+            dev_idx += 1
+
+            meta = format_status(device_id, rec["temperature"], rec["vibration"], rec["power_usage"])
+            sensor_obj = SensorData(
+                device_id=device_id,
+                temperature=rec["temperature"],
+                vibration=rec["vibration"],
+                power_usage=rec["power_usage"],
+                pressure=rec.get("pressure", 0.0),
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                machine_name=meta.get("machine_name", "Industrial Machine"),
+                status_short=meta.get("status_short", "Machine operating within safe parameters"),
+                recommendations=meta.get("recommendations", ["Continue standard operation"]),
+                signature=""
+            )
+            result = await _execute_telemetry_pipeline(sensor_obj)
+            if result.get("anomaly"):
+                print(f"[AutonomousFeeder] ANOMALY on {device_id} -> Block committed to Fabric: {result.get('tx_hash')[:16]}...")
+        except asyncio.CancelledError:
+            print("[AutonomousFeeder] Stopped cleanly.")
+            break
+        except Exception as exc:
+            print(f"[AutonomousFeeder] Stream notice: {exc}")
+            await asyncio.sleep(interval)
+
+
 @app.post("/api/process_data", dependencies=[Depends(verify_api_key)])
 @app.post("/api/process-data", dependencies=[Depends(verify_api_key)])
 @limiter.limit("60/minute")
 async def process_data(request: Request, data: SensorData):
     try:
         _verify_sensor_payload(data)
-        is_anomaly     = False
-        recommendation = "Normal Operation"
-        ai_source      = "model"
-        # In-memory AI inference via PyTorch LSTM Autoencoder
-        ai_result = anomaly_detector.predict(
-            device_id=data.device_id,
-            temperature=data.temperature,
-            vibration=data.vibration,
-            power_usage=data.power_usage,
-            pressure=data.pressure
-        )
-        is_anomaly = ai_result.get("is_anomaly", False)
-        ai_source  = "in_memory_lstm"
-
-        # --- Save to MongoDB ---
-        sensor_doc = SensorDataModel(
-            device_id=data.device_id,
-            temperature=data.temperature,
-            vibration=data.vibration,
-            power_usage=data.power_usage,
-            pressure=data.pressure,
-        )
-        await save_sensor_data(sensor_doc)
-
-        # --- Broadcast to WebSocket clients ---
-        await broadcast_data({
-            "device_id":   data.device_id,
-            "temperature": data.temperature,
-            "vibration":   data.vibration,
-            "power_usage": data.power_usage,
-            "pressure":    data.pressure,
-            "is_anomaly":  is_anomaly,
-            "timestamp":   datetime.now().isoformat(),
-        })
-
-        # --- Update in-memory counters ---
-        system_state["dashboard"]["total_scans"] += 1
-        system_state["ai"]["total_analyses"] += 1
-
-        status_label = "normal"
-        tx_hash      = "---"
-
-        # --- Anomaly path ---
-        if is_anomaly:
-            if data.temperature > 100:
-                recommendation = "CRITICAL: Overheating detected. Check cooling system."
-            elif data.vibration > 10:
-                recommendation = "WARNING: Severe mechanical vibration. Check mounting."
-            else:
-                recommendation = "ALERT: AI model detected anomaly pattern."
-
-            status_label = "critical"
-            system_state["dashboard"]["anomalies"]       += 1
-            system_state["ai"]["anomalies_found"]        += 1
-            system_state["blockchain"]["total_blocks"]   += 1
-            system_state["blockchain"]["transactions"]   += 1
-
-            # --- Save to MongoDB fraud alerts ---
-            fraud_alert = FraudAlertModel(
-                device_id=data.device_id,
-                alert_type="anomaly",
-                severity="high",
-                message=recommendation,
-                anomaly_data={
-                    "temperature": data.temperature,
-                    "vibration": data.vibration,
-                    "power_usage": data.power_usage,
-                    "ai_loss": ai_result.get("loss"),
-                    "ai_threshold": ai_result.get("threshold"),
-                }
-            )
-            await save_fraud_alert(fraud_alert)
-
-            # Build data hash for blockchain record
-            data_string   = json.dumps(data.dict(), sort_keys=True)
-            tx_hash       = hashlib.sha256(data_string.encode()).hexdigest()
-            previous_hash = (
-                system_state["blockchain"]["recent_blocks"][0]["hash"]
-                if system_state["blockchain"]["recent_blocks"]
-                else "0000000000000000"
-            )
-
-            block_record = {
-                "index":     system_state["blockchain"]["total_blocks"],
-                "id":        system_state["blockchain"]["total_blocks"],
-                "hash":      tx_hash,
-                "prev_hash": previous_hash,
-                "merkle_root": hashlib.sha256(f"{data.device_id}:{tx_hash}".encode()).hexdigest(),
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "status":    "confirmed",
-                "validator": "Consortium-Raft-Node-1",
-                "transactions": 1,
-            }
-            system_state["blockchain"]["recent_blocks"].insert(0, block_record)
-            system_state["blockchain"]["recent_blocks"] = \
-                system_state["blockchain"]["recent_blocks"][:10]
-
-            from database import db as mongo_db
-            if mongo_db is not None:
-                try:
-                    await mongo_db["blockchain_blocks"].insert_one(dict(block_record))
-                except Exception:
-                    pass
-
-            ai_record = {
-                "confidence": 95.0,
-                "device":         data.device_id,
-                "recommendation": recommendation,
-                "timestamp":      datetime.now().strftime("%H:%M:%S"),
-                "severity":       "high",
-            }
-
-            confidence_raw = ai_result.get("anomaly_score")
-            if confidence_raw is None:
-                confidence_raw = ai_result.get("loss", 0.95)
-            try:
-                confidence_value = float(confidence_raw)
-                if confidence_value <= 1.0:
-                    confidence_value *= 100.0
-                ai_record["confidence"] = round(max(0.0, min(confidence_value, 100.0)), 2)
-            except Exception:
-                pass
-
-            system_state["ai"]["recent_results"].insert(0, ai_record)
-            system_state["ai"]["recent_results"] = \
-                system_state["ai"]["recent_results"][:10]
-
-            # --- Write to Hyperledger Fabric ---
-            if BLOCKCHAIN_ACTIVE:
-                try:
-                    # FIX: was "CreateAsset" which does not exist in custom chaincode.
-                    # Correct function is "RecordSensorData" from smartcontract.go.
-                    # Signature: RecordSensorData(deviceID, assetType, dataHash,
-                    #             isAnomaly, anomalyScore, threshold,
-                    #             featureKeysJSON, timestamp)
-                    feature_keys_json = json.dumps(["temperature", "vibration", "power_usage"])
-                    anomaly_score     = str(round(
-                        ai_result.get("anomaly_score", ai_result.get("loss", 0.0)), 6
-                    ))
-                    tx_result = fabric_client.submit_transaction("RecordSensorData", [
-                        data.device_id,
-                        "INDUSTRIAL_SENSOR",
-                        tx_hash,
-                        str(is_anomaly).lower(),   # "true" or "false"
-                        anomaly_score,
-                        str(_ANOMALY_THRESHOLD),
-                        feature_keys_json,
-                        data.timestamp,
-                    ])
-                    if tx_result.get("status") not in ("success", "simulated"):
-                        print(f"Ledger write non-fatal notice: {tx_result.get('error')}")
-                except Exception as exc:
-                    print(f"Ledger write notice (non-fatal): {exc}")
-
-        # --- Append to history (in-memory storage) ---
-        history_record = {
-            "device":    data.device_id,
-            "hash":      tx_hash,
-            "value":     f"{data.temperature}C",
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "status":    status_label,
-            "temp":      data.temperature,
-            "vib":       data.vibration,
-            "pwr":       data.power_usage,
-            "anomaly":   is_anomaly,
-            "ai_source": ai_source,
-            "ai_error":  None,
-            "recommendation": recommendation,
-            "id":        system_state["dashboard"]["total_scans"],
-        }
-
-        system_state["history"].append(history_record)
-        if len(system_state["history"]) > 100:
-            system_state["history"].pop(0)
-
-        return {
-            "status":    "Processed",
-            "anomaly":   is_anomaly,
-            "ai_source": ai_source,
-            "ai_error":  None,
-            "tx_hash":   tx_hash if is_anomaly else None,
-        }
-
+        return await _execute_telemetry_pipeline(data)
     except HTTPException:
         raise
     except Exception as exc:
-           import traceback
-           error_msg = str(exc) if str(exc) else repr(exc)
-           traceback_str = traceback.format_exc()
-           print(f"process_data unhandled error: {error_msg}")
-           print(f"FULL TRACEBACK:\n{traceback_str}")
-           raise HTTPException(status_code=500, detail=f"Error: {error_msg or 'Unknown error'}")
+        import traceback
+        error_msg = str(exc) if str(exc) else repr(exc)
+        traceback_str = traceback.format_exc()
+        print(f"process_data unhandled error: {error_msg}")
+        print(f"FULL TRACEBACK:\n{traceback_str}")
+        raise HTTPException(status_code=500, detail=f"Error: {error_msg or 'Unknown error'}")
 
 
 # ---------------------------------------------------------------------------
