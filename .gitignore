@@ -9,12 +9,16 @@ venv/
 env/
 .venv/
 depin_env
-DATA/
-data/
+data/*
+!data/sensor_data.csv
+!data/plc_industrial_control_dataset (1).csv
+!data/requirements.txt
 Final_Report/
 
 # --- AI Service model artifacts (large files - do not commit) ---
 *.pth
+!ai-service/lstm_autoencoder.pth
+!ai-service/gnn_model.pth
 *.save
 *.joblib
 *.h5
