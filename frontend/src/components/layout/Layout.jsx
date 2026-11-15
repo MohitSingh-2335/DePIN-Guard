@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Footer from './Footer';
 import './Layout.css';
-import { TeamAccessControl } from '../../utils/TeamAccessControl';
 
 const savedTheme = localStorage.getItem('theme') || 'dark';
 document.documentElement.setAttribute('data-theme', savedTheme);
@@ -72,19 +71,14 @@ const Layout = ({ children }) => {
   const userName  = localStorage.getItem('userName') || localStorage.getItem('username') || localStorage.getItem('user') || 'Admin User';
   const userEmail = localStorage.getItem('userEmail') || localStorage.getItem('email') || 'admin@iot.com';
 
-  const isTeamMember = TeamAccessControl.isTeamMember(userEmail);
-  const isAdmin = localStorage.getItem("isAdmin") === "true";
-
   const handleSearch = (e) => {
     e.preventDefault();
     const q = searchQuery.toLowerCase().trim();
     if (!q) return;
 
-    const match = SEARCH_PAGES
-      .filter(page => page.path !== '/security' || isTeamMember || isAdmin)
-      .find(page =>
-        page.keywords.some(kw => q.includes(kw))
-      );
+    const match = SEARCH_PAGES.find(page =>
+      page.keywords.some(kw => q.includes(kw))
+    );
 
     if (match) {
       navigate(match.path);
@@ -119,9 +113,7 @@ const Layout = ({ children }) => {
     { path: '/ai-analysis',  tag: 'AI', label: 'AI Analysis'  },
     { path: '/history',      tag: 'HIST', label: 'History'      },
     { path: '/fraud-alerts', tag: 'ALERT', label: 'Fraud Alerts' },
-    ...(isTeamMember || isAdmin
-      ? [{ path: '/security', tag: 'SEC', label: 'Security' }]
-      : []),
+    { path: '/security',     tag: 'SEC', label: 'Security'     },
     { path: '/settings',     tag: 'SET', label: 'Settings'     },
   ];
 
@@ -143,17 +135,15 @@ const Layout = ({ children }) => {
             </form>
 
             <div className="search-quick-links">
-              {SEARCH_PAGES
-                .filter(page => page.path !== '/security' || isTeamMember || isAdmin)
-                .map(page => (
-                  <button
-                    key={page.path}
-                    className="search-quick-btn"
-                    onClick={() => { navigate(page.path); closeSearch(); }}
-                  >
-                    [{page.tag}] {page.label}
-                  </button>
-                ))}
+              {SEARCH_PAGES.map(page => (
+                <button
+                  key={page.path}
+                  className="search-quick-btn"
+                  onClick={() => { navigate(page.path); closeSearch(); }}
+                >
+                  [{page.tag}] {page.label}
+                </button>
+              ))}
             </div>
 
             {searchResult && <p className="search-no-result">{searchResult}</p>}
