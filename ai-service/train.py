@@ -1,4 +1,5 @@
 import os
+import json
 import time
 import joblib
 import numpy as np
@@ -6,6 +7,7 @@ import pandas as pd
 import torch
 import torch.nn as nn
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DATA_SENSORS = os.path.join(ROOT_DIR, "data", "sensor_data.csv")
@@ -14,6 +16,7 @@ DATA_PLC = os.path.join(ROOT_DIR, "data", "plc_industrial_control_dataset (1).cs
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "lstm_autoencoder.pth")
 SCALER_PATH = os.path.join(os.path.dirname(__file__), "scaler.save")
 THRESHOLD_PATH = os.path.join(os.path.dirname(__file__), "threshold.txt")
+METRICS_PATH = os.path.join(os.path.dirname(__file__), "metrics.json")
 
 SEQ_LENGTH = 30
 FEATURES = 4
@@ -50,7 +53,7 @@ def load_dataset():
     fused = pd.DataFrame({
         "temperature": pivoted["Temperature"].round(2),
         "vibration": pivoted["Vibration"].round(2),
-        "power_usage": (pivoted["Energy_Consumption"] * 100.0).round(2),
+        "power_usage": (pivoted["Energy_Consumption"] * 10.0).round(2),
         "pressure": df_plc["hydraulic_pressure"].round(2),
         "is_anomaly": pivoted["is_anomaly"]
     })
@@ -62,19 +65,23 @@ def train():
     fused_df = load_dataset()
     feature_cols = ["temperature", "vibration", "power_usage", "pressure"]
 
-    # Filter normal baseline data (unsupervised anomaly detection)
-    normal_df = fused_df[fused_df["is_anomaly"] == 0][feature_cols]
-    print(f"Total dataset records: {len(fused_df)} | Normal baseline records: {len(normal_df)}")
+    # Split train (80%) and held-out validation (20%)
+    split_idx = int(len(fused_df) * 0.8)
+    train_df = fused_df.iloc[:split_idx]
+    val_df = fused_df.iloc[split_idx:]
 
-    # Fit MinMaxScaler
+    # Unsupervised: fit scaler and train LSTM solely on normal baseline operation
+    normal_train = train_df[train_df["is_anomaly"] == 0][feature_cols]
+    print(f"Total dataset records: {len(fused_df)} | Normal training records: {len(normal_train)}")
+
     scaler = MinMaxScaler()
-    scaled_data = scaler.fit_transform(normal_df.values)
+    scaled_train = scaler.fit_transform(normal_train.values)
     joblib.dump(scaler, SCALER_PATH)
     print(f"Saved 4-feature scaler to: {SCALER_PATH}")
     print(f"Scaler min: {scaler.data_min_} | max: {scaler.data_max_}")
 
     # Build temporal sliding sequences
-    sequences = [scaled_data[i : i + SEQ_LENGTH] for i in range(len(scaled_data) - SEQ_LENGTH)]
+    sequences = [scaled_train[i : i + SEQ_LENGTH] for i in range(len(scaled_train) - SEQ_LENGTH)]
     X_train = torch.tensor(np.array(sequences), dtype=torch.float32)
     print(f"Training sequences shape: {X_train.shape}")
 
@@ -99,7 +106,7 @@ def train():
     duration = time.time() - start_time
     print(f"Training completed in {duration:.2f} seconds.")
 
-    # Calculate 95th percentile reconstruction threshold
+    # Calculate 95th percentile reconstruction threshold on training sequences
     model.eval()
     with torch.no_grad():
         reconstructions = model(X_train)
@@ -112,6 +119,54 @@ def train():
     torch.save(model.state_dict(), MODEL_PATH)
     print(f"Saved model weights to: {MODEL_PATH}")
     print(f"Calculated 95th percentile threshold: {threshold:.6f} -> saved to {THRESHOLD_PATH}")
+
+    # Evaluation on held-out validation set (normal + anomalies)
+    scaled_val = scaler.transform(val_df[feature_cols].values)
+    val_sequences = [scaled_val[i : i + SEQ_LENGTH] for i in range(len(scaled_val) - SEQ_LENGTH)]
+    val_labels = [int(val_df["is_anomaly"].iloc[i + SEQ_LENGTH - 1]) for i in range(len(scaled_val) - SEQ_LENGTH)]
+
+    X_val = torch.tensor(np.array(val_sequences), dtype=torch.float32)
+    with torch.no_grad():
+        val_recon = model(X_val)
+        val_errors = torch.mean((X_val - val_recon) ** 2, dim=(1, 2)).numpy()
+
+    val_preds = (val_errors > threshold).astype(int)
+    val_labels = np.array(val_labels)
+
+    acc = float(accuracy_score(val_labels, val_preds))
+    prec, rec, f1, _ = precision_recall_fscore_support(val_labels, val_preds, average="binary", zero_division=0)
+
+    print("\nHeld-Out Validation Evaluation:")
+    print(f"  Accuracy:  {acc * 100:.2f}%")
+    print(f"  Precision: {prec * 100:.2f}%")
+    print(f"  Recall:    {rec * 100:.2f}%")
+    print(f"  F1-Score:  {f1 * 100:.2f}%")
+
+    # Load existing metrics or create new
+    metrics = {}
+    if os.path.exists(METRICS_PATH):
+        try:
+            with open(METRICS_PATH, "r", encoding="utf-8") as f:
+                metrics = json.load(f)
+        except Exception:
+            metrics = {}
+
+    metrics.update({
+        "model_name": "PyTorch 4-Channel Temporal LSTM Autoencoder",
+        "threshold": round(threshold, 6),
+        "accuracy": round(acc * 100, 2),
+        "lstm_accuracy": round(acc * 100, 2),
+        "precision": round(prec * 100, 2),
+        "recall": round(rec * 100, 2),
+        "f1_score": round(f1 * 100, 2),
+        "epochs": EPOCHS,
+        "input_features": feature_cols,
+        "updated_at": time.strftime("%Y-%m-%d %H:%M:%S")
+    })
+
+    with open(METRICS_PATH, "w", encoding="utf-8") as f:
+        json.dump(metrics, f, indent=2)
+    print(f"Saved metrics to: {METRICS_PATH}")
 
 
 if __name__ == "__main__":
