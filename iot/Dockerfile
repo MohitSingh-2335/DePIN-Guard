@@ -2,13 +2,16 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN adduser --disabled-password --gecos "" appuser
-
-COPY requirements.txt .
+COPY iot/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY iot/ ./iot/
+COPY data/ ./data/
+
+RUN adduser --disabled-password --gecos "" appuser
+RUN chown -R appuser:appuser /app
 
 USER appuser
+WORKDIR /app/iot
 
 CMD ["python", "data_ingestor.py"]
