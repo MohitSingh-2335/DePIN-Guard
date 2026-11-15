@@ -1,5 +1,0 @@
-sklearn
-pandas
-keras
-tensorflow
-xgboost	
