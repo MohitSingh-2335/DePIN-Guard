@@ -1,7 +1,7 @@
 import { getStoredToken } from './sessionAuth';
 
-const BACKEND_URL = (import.meta.env.VITE_API_URL || 'https://depin-guard-backend-nsvs.onrender.com').trim().replace(/\/$/, '');
-const API_KEY     = (import.meta.env.VITE_API_KEY  || 'ee89a0f2fe93d5479b8891461e3f0cc45b0e4101ff8615b9d53e134925ba4af2').trim();
+const BACKEND_URL = (import.meta.env.VITE_API_URL || '').trim().replace(/\/$/, '');
+const API_KEY = (import.meta.env.VITE_API_KEY || '').trim();
 
 /**
  * Authenticated fetch wrapper
