@@ -13,6 +13,7 @@ CONFIG_DIR     = os.path.join(BLOCKCHAIN_DIR, "fabric-samples", "config")
 ORDERER_ADDRESS = os.getenv("FABRIC_ORDERER_ADDRESS", "127.0.0.1:7050")
 PEER1_ADDRESS   = os.getenv("FABRIC_PEER1_ADDRESS",   "127.0.0.1:7051")
 PEER2_ADDRESS   = os.getenv("FABRIC_PEER2_ADDRESS",   "127.0.0.1:9051")
+FABRIC_GATEWAY_URL = os.getenv("FABRIC_GATEWAY_URL", "").rstrip("/")
 
 # Certificate paths — custom network (manufacturer + maintenance orgs)
 MFR_TLS = os.path.join(
@@ -76,6 +77,21 @@ class FabricManager:
             print("Hyperledger peer binary not found - running in simulation mode")
 
     def network_status(self) -> Dict[str, Any]:
+        if FABRIC_GATEWAY_URL:
+            try:
+                import requests
+                res = requests.get(f"{FABRIC_GATEWAY_URL}/health", timeout=3)
+                if res.status_code == 200:
+                    return {
+                        "ready": True,
+                        "mode": "cloud_gateway",
+                        "url": FABRIC_GATEWAY_URL,
+                        "checks": {"gateway": True},
+                        "addresses": {"gateway": FABRIC_GATEWAY_URL}
+                    }
+            except Exception:
+                pass
+
         checks = {
             "orderer": _is_tcp_reachable(ORDERER_ADDRESS),
             "peer1":   _is_tcp_reachable(PEER1_ADDRESS),
@@ -93,6 +109,36 @@ class FabricManager:
 
     def submit_transaction(self, function_name: str, args_list: List[str]) -> Dict[str, Any]:
         print(f"Blockchain: Submitting '{function_name}' with args {args_list}")
+
+        if FABRIC_GATEWAY_URL:
+            try:
+                import requests
+                from datetime import datetime, timezone
+                if function_name == "RecordSensorData" and len(args_list) >= 4:
+                    payload = {
+                        "device_id": args_list[0],
+                        "asset_type": args_list[1] if len(args_list) > 1 else "Industrial Machine",
+                        "data_hash": args_list[2] if len(args_list) > 2 else "hash",
+                        "is_anomaly": bool(args_list[3]) if len(args_list) > 3 else False,
+                        "anomaly_score": float(args_list[4]) if len(args_list) > 4 else 0.0,
+                        "threshold": float(args_list[5]) if len(args_list) > 5 else 0.18,
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    }
+                    res = requests.post(f"{FABRIC_GATEWAY_URL}/api/record-sensor", json=payload, timeout=5)
+                    if res.status_code == 200:
+                        return res.json()
+                elif function_name == "RecordFraudFlag" and len(args_list) >= 2:
+                    payload = {
+                        "asset_id": args_list[0],
+                        "fraud_type": args_list[1],
+                        "confidence": 0.95,
+                        "evidence_hash": args_list[2] if len(args_list) > 2 else "evidence"
+                    }
+                    res = requests.post(f"{FABRIC_GATEWAY_URL}/api/record-fraud", json=payload, timeout=5)
+                    if res.status_code == 200:
+                        return res.json()
+            except Exception as e:
+                print(f"Cloud Fabric Gateway exception: {e}")
 
         if not self.peer_executable:
             return {"status": "simulated"}
