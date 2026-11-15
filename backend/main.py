@@ -78,6 +78,24 @@ from ai_engine import AnomalyDetector
 anomaly_detector = AnomalyDetector()
 _ANOMALY_THRESHOLD = anomaly_detector.threshold
 
+METRICS_PATH = os.path.join(ROOT_DIR, "ai-service", "metrics.json")
+
+
+def load_ai_metrics() -> dict:
+    if os.path.exists(METRICS_PATH):
+        try:
+            with open(METRICS_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {
+        "lstm_accuracy": 82.4,
+        "gnn_accuracy": 87.65,
+        "gnn_precision": 93.33,
+        "threshold": _ANOMALY_THRESHOLD,
+    }
+
+
 FRAUD_DB      = os.path.join(os.path.dirname(__file__), "data", "fraud_reports.json")
 KNOWN_DEVICES = ["Device-001", "Device-002", "Device-003", "Device-004", "Device-005"]
 
@@ -104,6 +122,7 @@ system_state = {
         "anomalies_found": 0,
         "recent_results": [],
     },
+    "latest_by_device": {},
     "history": [],
 }
 
@@ -117,19 +136,20 @@ async def _hydrate_system_state():
             total_scans = await mongo_db["sensor_data"].count_documents({})
             anom_count = await mongo_db["sensor_data"].count_documents({"$or": [{"is_anomaly": True}, {"status": "critical"}]})
             devices = await mongo_db["sensor_data"].distinct("device_id")
+            ai_metrics = load_ai_metrics()
             
-            system_state["dashboard"]["active_devices"] = len(devices) if devices else 5
+            system_state["dashboard"]["active_devices"] = len(devices) if devices else 33
             system_state["dashboard"]["total_scans"] = total_scans
             system_state["dashboard"]["anomalies"] = anom_count
             system_state["dashboard"]["uptime"] = 99.9 if total_scans > 0 else 100.0
             
             system_state["ai"]["total_analyses"] = total_scans
             system_state["ai"]["anomalies_found"] = anom_count
-            system_state["ai"]["accuracy"] = 82.85
+            system_state["ai"]["accuracy"] = ai_metrics.get("lstm_accuracy", 82.4)
             system_state["ai"]["active_models_count"] = 2
             system_state["ai"]["available_models"] = [
-                "PyTorch 4-Channel Temporal LSTM Autoencoder (Accuracy: 79.82%)",
-                "PyTorch DeviceGCN Graph Neural Network (Accuracy: 85.89%, Precision: 93.67%)"
+                "PyTorch 4-Channel Temporal LSTM Autoencoder",
+                "PyTorch DeviceGCN Graph Neural Network"
             ]
             
             # Hydrate blockchain blocks
@@ -204,8 +224,11 @@ def run_gnn_analysis():
     if not GNN_ACTIVE:
         return
     try:
+        from iot.data_ingestor import DEVICES
+        x_nodes = anomaly_detector.get_node_features(DEVICES)
+        if x_nodes is None:
+            return
         with torch.no_grad():
-            x_nodes = torch.randn(33, 4) * 0.1 + 0.5
             out = gnn_model(x_nodes, gnn_adj)
             probs = torch.exp(out)[:, 1]
             flagged = int((probs > 0.5).sum().item())
@@ -378,7 +401,6 @@ class SensorData(BaseModel):
     alert_level: str = ""   # e.g., "NORMAL", "WARNING", "CRITICAL"
     status_short: str = ""  # e.g., "Machine running well"
     recommendations: list = []  # List of actions for non-technical users
-    ground_truth_anomaly: int = 0
 
 
 def _sensor_signature(data: SensorData) -> str:
@@ -477,7 +499,7 @@ async def get_public_stats():
 
 @app.get("/api/dashboard", dependencies=[Depends(verify_api_key)])
 async def get_dashboard():
-    """Get dashboard data from MongoDB (MongoDB-only, no fallback)"""
+    """Get dashboard data from MongoDB (with real latest device telemetry)"""
     from database import db as mongo_db, mongodb_client
     
     if mongo_db is None or mongodb_client is None:
@@ -499,10 +521,19 @@ async def get_dashboard():
             }
             recent_data.append(transformed)
         
-        # Get metrics from system state
+        latest_devices = list(system_state["latest_by_device"].values())
+        if not latest_devices and recent_data:
+            seen = set()
+            for r in recent_data:
+                if r["device"] not in seen:
+                    seen.add(r["device"])
+                    latest_devices.append(r)
+
         return {
             "stats": system_state["dashboard"],
             "recent_data": recent_data,
+            "latest_devices": latest_devices,
+            "blockchain_active": BLOCKCHAIN_ACTIVE,
             "source": "mongodb"
         }
     except Exception as e:
@@ -530,6 +561,7 @@ async def get_blockchain():
 
 @app.get("/api/ai-analysis", dependencies=[Depends(verify_api_key)])
 async def get_ai_analysis():
+    ai_metrics = load_ai_metrics()
     from database import db as mongo_db
     if mongo_db is not None:
         try:
@@ -547,9 +579,9 @@ async def get_ai_analysis():
                     "device": a.get("device_id", "Unknown"),
                     "analysis_type": "Temporal Reconstruction",
                     "severity": "high",
-                    "confidence": 96.5,
+                    "confidence": a.get("confidence", 95.0),
                     "timestamp": a.get("timestamp", datetime.utcnow().strftime("%H:%M:%S")),
-                    "description": f"Sensor values (Temp: {a.get('temperature')} C, Vib: {a.get('vibration')}) exceeded 95th percentile threshold",
+                    "description": f"Sensor values (Temp: {a.get('temperature')} C, Vib: {a.get('vibration')}) exceeded anomaly threshold",
                     "recommendation": a.get("recommendation") or "Check cooling circuit and verify vibration damper.",
                     "model_name": "PyTorch 4-Channel Temporal LSTM Autoencoder"
                 })
@@ -557,15 +589,15 @@ async def get_ai_analysis():
             return {
                 "total_analyses": total_scans,
                 "anomalies_found": anom_count,
-                "accuracy": 79.82,
+                "accuracy": ai_metrics.get("lstm_accuracy", 82.4),
                 "active_models_count": 2,
                 "available_models": [
-                    "PyTorch 4-Channel Temporal LSTM Autoencoder (Accuracy: 79.82%)",
-                    "PyTorch DeviceGCN Graph Neural Network (Accuracy: 85.89%, Precision: 93.67%)"
+                    "PyTorch 4-Channel Temporal LSTM Autoencoder",
+                    "PyTorch DeviceGCN Graph Neural Network"
                 ],
-                "lstm_accuracy": 79.82,
-                "gnn_accuracy": 85.89,
-                "gnn_precision": 93.67,
+                "lstm_accuracy": ai_metrics.get("lstm_accuracy", 82.4),
+                "gnn_accuracy": ai_metrics.get("gnn_accuracy", 87.65),
+                "gnn_precision": ai_metrics.get("gnn_precision", 93.33),
                 "recent_results": results
             }
         except Exception:
@@ -690,9 +722,6 @@ async def get_all_history():
 
 
 async def _execute_telemetry_pipeline(data: SensorData) -> dict:
-    is_anomaly     = False
-    recommendation = "Normal Operation"
-    ai_source      = "model"
     # In-memory AI inference via PyTorch LSTM Autoencoder
     ai_result = anomaly_detector.predict(
         device_id=data.device_id,
@@ -701,12 +730,24 @@ async def _execute_telemetry_pipeline(data: SensorData) -> dict:
         power_usage=data.power_usage,
         pressure=data.pressure
     )
-    loss_val = ai_result.get("loss", 0.0)
-    model_flag = ai_result.get("is_anomaly", False) or (loss_val > 0.155)
-    physical_flag = (data.temperature > 85.0) or (data.vibration > 8.0)
-    dataset_flag = bool(getattr(data, "ground_truth_anomaly", 0))
-    is_anomaly = model_flag or physical_flag or dataset_flag
-    ai_source  = "in_memory_lstm"
+    is_anomaly = bool(ai_result.get("is_anomaly", False))
+    recommendation = ai_result.get("recommendation", "Normal Operation")
+    loss_val = float(ai_result.get("loss", 0.0))
+    threshold_val = float(ai_result.get("threshold", _ANOMALY_THRESHOLD))
+    confidence_val = float(ai_result.get("confidence", 95.0))
+    ai_source = "in_memory_lstm"
+
+    # Track latest reading per device
+    system_state["latest_by_device"][data.device_id] = {
+        "id": data.device_id,
+        "device": data.device_id,
+        "temp": data.temperature,
+        "vib": data.vibration,
+        "pwr": data.power_usage,
+        "pressure": data.pressure,
+        "status": "critical" if is_anomaly else "normal",
+        "timestamp": data.timestamp,
+    }
 
     # --- Save to MongoDB ---
     sensor_doc = SensorDataModel(
@@ -724,19 +765,11 @@ async def _execute_telemetry_pipeline(data: SensorData) -> dict:
     system_state["dashboard"]["total_scans"] += 1
     system_state["ai"]["total_analyses"] += 1
 
-    status_label = "normal"
+    status_label = "critical" if is_anomaly else "normal"
     tx_hash      = "---"
 
     # --- Anomaly path ---
     if is_anomaly:
-        if data.temperature > 100:
-            recommendation = "CRITICAL: Overheating detected. Check cooling system."
-        elif data.vibration > 10:
-            recommendation = "WARNING: Severe mechanical vibration. Check mounting."
-        else:
-            recommendation = "ALERT: AI model detected anomaly pattern."
-
-        status_label = "critical"
         system_state["dashboard"]["anomalies"]       += 1
         system_state["ai"]["anomalies_found"]        += 1
         system_state["blockchain"]["total_blocks"]   += 1
@@ -808,23 +841,15 @@ async def _execute_telemetry_pipeline(data: SensorData) -> dict:
                 pass
 
         ai_record = {
-            "confidence": 95.0,
+            "confidence": confidence_val,
             "device":         data.device_id,
             "recommendation": recommendation,
             "timestamp":      datetime.now().strftime("%H:%M:%S"),
             "severity":       "high",
+            "model_name":     "PyTorch 4-Channel Temporal LSTM Autoencoder",
+            "loss":           loss_val,
+            "threshold":      threshold_val,
         }
-
-        confidence_raw = ai_result.get("anomaly_score")
-        if confidence_raw is None:
-            confidence_raw = ai_result.get("loss", 0.95)
-        try:
-            confidence_value = float(confidence_raw)
-            if confidence_value <= 1.0:
-                confidence_value *= 100.0
-            ai_record["confidence"] = round(max(0.0, min(confidence_value, 100.0)), 2)
-        except Exception:
-            pass
 
         system_state["ai"]["recent_results"].insert(0, ai_record)
         system_state["ai"]["recent_results"] = \
@@ -896,14 +921,7 @@ async def autonomous_feeder_loop():
         records = []
 
     if not records:
-        try:
-            from iot.data_ingestor import generate_synthetic_record, DEVICES, format_status
-            records = [generate_synthetic_record() for _ in range(500)]
-        except Exception:
-            records = []
-
-    if not records:
-        print("[AutonomousFeeder] Critical: No records available.")
+        print("[AutonomousFeeder] Critical: No industrial dataset records available.")
         return
 
     print(f"[AutonomousFeeder] Continuous 24/7 autonomous loop online ({len(records)} records, {interval}s interval)")
@@ -930,7 +948,6 @@ async def autonomous_feeder_loop():
                 status_short=meta.get("status_short", "Machine operating within safe parameters"),
                 recommendations=meta.get("recommendations", ["Continue standard operation"]),
                 signature="",
-                ground_truth_anomaly=int(rec.get("ground_truth_anomaly", 0))
             )
             result = await _execute_telemetry_pipeline(sensor_obj)
             if result.get("anomaly"):
