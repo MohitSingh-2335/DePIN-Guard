@@ -3,27 +3,32 @@ import Layout from '../components/layout/Layout';
 import { authenticatedFetch } from '../utils/api';
 import './HistoryPage.css';
 
-// --- Helper: Time Formatting (Point #6) ---
+// --- Helper: Time Formatting ---
 const formatTime = (timestamp) => {
   if (!timestamp) return '---';
-  const date = new Date(timestamp);
-  const now = new Date();
-  const diffInSeconds = Math.floor((now - date) / 1000);
-  
-  if (diffInSeconds < 60) return 'Just now';
-  if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
-  if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
-  return date.toLocaleDateString();
+  try {
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return String(timestamp);
+    const now = new Date();
+    const diffInSeconds = Math.floor((now - date) / 1000);
+    
+    if (diffInSeconds < 60) return 'Just now';
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+    return date.toLocaleString();
+  } catch {
+    return String(timestamp);
+  }
 };
 
 const HistoryPage = () => {
   const [historyData, setHistoryData] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [loading, setLoading]         = useState(true);
+  const [searchTerm, setSearchTerm]   = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
-  const [selectedItem, setSelectedItem] = useState(null); // (Point #5: Popup State)
-  const itemsPerPage = 10;
+  const [selectedItem, setSelectedItem] = useState(null);
+  const itemsPerPage = 12;
 
   const fetchHistory = async () => {
     try {
@@ -43,11 +48,10 @@ const HistoryPage = () => {
 
   useEffect(() => {
     fetchHistory();
-    const interval = setInterval(fetchHistory, 5000);
+    const interval = setInterval(fetchHistory, 4000);
     return () => clearInterval(interval);
   }, []);
 
-  // --- Color Coding Logic (Point #2) ---
   const getStatusClass = (status) => {
     const s = status?.toLowerCase();
     if (s === 'verified' || s === 'normal') return 'status-success';
@@ -56,28 +60,32 @@ const HistoryPage = () => {
     return 'status-info';
   };
 
-  // --- Filter & Search Logic (Point #3 & #4) ---
   const filteredData = historyData.filter(item => {
+    const term = searchTerm.toLowerCase();
     const matchesSearch = 
-      (item.device ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (item.hash ?? '').toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesFilter = filterStatus === 'all' || item.status === filterStatus;
+      (item.device ?? '').toLowerCase().includes(term) ||
+      (item.hash ?? '').toLowerCase().includes(term) ||
+      (item.id ?? '').toLowerCase().includes(term);
+    const matchesFilter =
+      filterStatus === 'all' ||
+      (filterStatus === 'verified' && (item.status === 'verified' || item.status === 'normal')) ||
+      (filterStatus === 'critical' && (item.status === 'critical' || item.anomaly === 1));
     return matchesSearch && matchesFilter;
   });
 
-  // --- Pagination Logic (Point #8) ---
-  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+  const totalPages = Math.max(1, Math.ceil(filteredData.length / itemsPerPage));
   const currentData = filteredData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
-  // --- Export CSV (Point #10) ---
   const handleExportCSV = () => {
-    const headers = ['ID', 'Device', 'Hash', 'Status', 'Timestamp'];
-    const csvRows = filteredData.map(h => `${h.id},${h.device},${h.hash},${h.status},${h.timestamp}`);
+    const headers = ['ID', 'Device', 'Hash', 'Status', 'Temperature', 'Vibration', 'Power', 'Timestamp'];
+    const csvRows = filteredData.map(h => 
+      `"${h.id}","${h.device}","${h.hash}","${h.status}",${h.temp},${h.vib},${h.pwr},"${h.timestamp}"`
+    );
     const blob = new Blob([[headers.join(','), ...csvRows].join('\n')], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `audit-log-${new Date().getTime()}.csv`;
+    a.download = `depin-audit-log-${new Date().getTime()}.csv`;
     a.click();
   };
 
@@ -85,33 +93,33 @@ const HistoryPage = () => {
     <Layout>
       <div className="history-container">
         
-        {/* Header & Export (Point #10) */}
+        {/* Header & Export */}
         <div className="page-header">
           <div>
-            <h1 className="page-title">Network Audit Logs</h1>
-            <p className="page-subtitle">Real-time history of DePIN node activities</p>
+            <h1 className="page-title">Network Audit &amp; Telemetry Logs</h1>
+            <p className="page-subtitle">Cryptographic ledger and sensor telemetry history verified across consortium nodes</p>
           </div>
           <button className="export-button" onClick={handleExportCSV}>
-            Export CSV
+            Export Audit CSV
           </button>
         </div>
 
         {/* Mini Stats Grid */}
         <div className="history-stats-grid">
           <div className="stat-card">
-            <span className="stat-label">Total Logs</span>
+            <span className="stat-label">Total Verified Records</span>
             <span className="stat-value">{historyData.length}</span>
           </div>
           <div className="stat-card">
-            <span className="stat-label">Critical Alerts</span>
+            <span className="stat-label">Critical Anomaly Logs</span>
             <span className="stat-value text-danger">
-              {historyData.filter(h => h.status === 'critical').length}
+              {historyData.filter(h => h.status === 'critical' || h.anomaly === 1).length}
             </span>
           </div>
           <div className="stat-card">
-            <span className="stat-label">Verified Nodes</span>
+            <span className="stat-label">Optimal Machine Scans</span>
             <span className="stat-value text-success">
-              {historyData.filter(h => h.status === 'verified').length}
+              {historyData.filter(h => h.status === 'verified' || h.status === 'normal').length}
             </span>
           </div>
         </div>
@@ -121,22 +129,21 @@ const HistoryPage = () => {
           <div className="search-wrapper">
             <input 
               type="text" 
-              placeholder="Search by Node ID or Hash..." 
+              placeholder="Search by Node ID, Hash, or Mongo ID..." 
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
               className="search-input"
             />
           </div>
           <div className="filter-wrapper">
             <select 
               value={filterStatus} 
-              onChange={(e) => setFilterStatus(e.target.value)}
+              onChange={(e) => { setFilterStatus(e.target.value); setCurrentPage(1); }}
               className="filter-select"
             >
-              <option value="all">All Events</option>
-              <option value="verified">Verified Only</option>
-              <option value="critical">Critical Only</option>
-              <option value="pending">Pending</option>
+              <option value="all">All Telemetry Logs</option>
+              <option value="verified">Verified / Normal Only</option>
+              <option value="critical">Critical Anomalies Only</option>
             </select>
           </div>
         </div>
@@ -144,34 +151,44 @@ const HistoryPage = () => {
         {/* Activity Table */}
         <div className="table-container">
           {loading ? (
-            <div className="loader">Syncing with Ledger...</div>
+            <div className="loader">Syncing telemetry logs with MongoDB &amp; Ledger...</div>
           ) : filteredData.length === 0 ? (
-            <div className="empty-state">No activity logs found.</div>
+            <div className="empty-state">No matching activity logs found.</div>
           ) : (
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Event ID</th>
-                  <th>Node ID</th>
-                  <th>Status</th>
-                  <th>Time</th>
+                  <th>Cryptographic Hash</th>
+                  <th>Node Machine</th>
+                  <th>Telemetry Readings</th>
+                  <th>Audit Status</th>
+                  <th>Recorded Time</th>
                   <th>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {currentData.map((item) => (
                   <tr key={item.id}>
-                    <td><span className="id-badge">#{item.id}</span></td>
-                    <td><code className="node-code">{item.device}</code></td>
+                    <td>
+                      <code className="id-badge" style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: '#38bdf8' }}>
+                        {item.hash ? `${item.hash.slice(0, 14)}...` : item.id.slice(-8)}
+                      </code>
+                    </td>
+                    <td><strong className="node-code">{item.device}</strong></td>
+                    <td style={{ fontSize: '0.8rem', color: '#cbd5e1' }}>
+                      {item.temp}°C · {item.vib} mm/s · {item.pwr}W
+                    </td>
                     <td>
                       <span className={`status-pill ${getStatusClass(item.status)}`}>
-                        {item.status}
+                        {item.status === 'critical' ? 'CRITICAL ALERT' : 'VERIFIED'}
                       </span>
                     </td>
-                    <td title={item.timestamp}>{formatTime(item.timestamp)}</td>
+                    <td title={item.timestamp} style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                      {formatTime(item.timestamp)}
+                    </td>
                     <td>
                       <button className="details-link" onClick={() => setSelectedItem(item)}>
-                        View Details
+                        Inspect Record
                       </button>
                     </td>
                   </tr>
@@ -181,26 +198,71 @@ const HistoryPage = () => {
           )}
         </div>
 
+        {/* Pagination Controls */}
+        {totalPages > 1 && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.25rem', flexWrap: 'wrap', gap: '10px' }}>
+            <span style={{ fontSize: '0.82rem', color: '#94a3b8' }}>
+              Showing {((currentPage - 1) * itemsPerPage) + 1}–{Math.min(currentPage * itemsPerPage, filteredData.length)} of {filteredData.length} audit entries
+            </span>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                style={{
+                  background: currentPage === 1 ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.08)',
+                  color: currentPage === 1 ? '#475569' : '#fff',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '6px',
+                  padding: '6px 14px',
+                  cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                  fontSize: '0.8rem',
+                }}
+              >
+                Previous
+              </button>
+              <span style={{ padding: '4px 10px', fontSize: '0.82rem', color: '#38bdf8', fontWeight: 600 }}>
+                Page {currentPage} of {totalPages}
+              </span>
+              <button
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                style={{
+                  background: currentPage >= totalPages ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.08)',
+                  color: currentPage >= totalPages ? '#475569' : '#fff',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '6px',
+                  padding: '6px 14px',
+                  cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer',
+                  fontSize: '0.8rem',
+                }}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* View Details Popup */}
         {selectedItem && (
           <div className="modal-overlay" onClick={() => setSelectedItem(null)}>
             <div className="details-modal" onClick={e => e.stopPropagation()}>
               <div className="modal-header">
-                <h3>Log Details</h3>
+                <h3>Cryptographic Audit Details</h3>
                 <button onClick={() => setSelectedItem(null)}>×</button>
               </div>
               <div className="modal-body">
                 <p><strong>Device ID:</strong> {selectedItem.device}</p>
-                <p><strong>Blockchain Hash:</strong> <br/><small>{selectedItem.hash}</small></p>
-                <p><strong>Metrics:</strong> {selectedItem.temp}°C | {selectedItem.pwr}W</p>
-                <p><strong>Status:</strong> {selectedItem.status.toUpperCase()}</p>
+                <p><strong>Status:</strong> <span className={`status-pill ${getStatusClass(selectedItem.status)}`}>{selectedItem.status.toUpperCase()}</span></p>
+                <p><strong>Ledger Transaction Hash:</strong><br/><code style={{ wordBreak: 'break-all', color: '#38bdf8', background: 'rgba(56,189,248,0.1)', padding: '4px', borderRadius: '4px' }}>{selectedItem.hash}</code></p>
+                <p><strong>Telemetry Metrics:</strong> Temp: {selectedItem.temp}°C | Vibration: {selectedItem.vib} mm/s | Power: {selectedItem.pwr} W {selectedItem.pressure ? `| Pressure: ${selectedItem.pressure} bar` : ''}</p>
+                <p><strong>AI Inference Engine:</strong> {selectedItem.ai_source}</p>
+                <p><strong>Recommendation:</strong> {selectedItem.recommendation || 'Operational parameters nominal.'}</p>
                 <p><strong>Full Timestamp:</strong> {selectedItem.timestamp}</p>
               </div>
             </div>
           </div>
         )}
 
-        {/* Pagination logic here (similar to your original code) */}
       </div>
     </Layout>
   );
