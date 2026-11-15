@@ -139,7 +139,7 @@ async def execute_attack_test(request: Request, payload: AttackTestRequest):
     # ---------------------------------------------------------
     # 4. SlowITE / Sensor Tampering (AI Layer & Blockchain)
     # ---------------------------------------------------------
-    if target in ("slowite", "all"):
+    if target in ("slowite", "injection", "all"):
         t0 = time.perf_counter()
         from ai_engine import AnomalyDetector
         detector = AnomalyDetector()
