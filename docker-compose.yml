@@ -1,18 +1,10 @@
 # docker-compose.yml — DePIN-Guard Local Lab Stack
 
 services:
-  auth-service:
-    build: ./auth-service
-    container_name: depin-auth
-    ports:
-      - "8001:8001"
-    restart: unless-stopped
-    environment:
-      - MONGODB_URI=${MONGODB_URI}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: depin-backend
     ports:
       - "8000:8000"
@@ -21,8 +13,10 @@ services:
       - DEPIN_API_KEY=${DEPIN_API_KEY}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - MONGODB_URI=${MONGODB_URI}
-    depends_on:
-      - auth-service
+      - AUTONOMOUS_FEEDER=false
+    volumes:
+      - ./ai-service:/app/ai-service
+      - ./data:/app/data
 
   frontend:
     build:
@@ -30,7 +24,7 @@ services:
       args:
         - VITE_API_URL=${VITE_API_URL:-http://localhost:8000}
         - VITE_API_KEY=${DEPIN_API_KEY}
-        - VITE_AUTH_URL=${VITE_AUTH_URL:-http://localhost:8001}
+        - VITE_AUTH_URL=${VITE_AUTH_URL:-http://localhost:8000}
     container_name: depin-frontend
     ports:
       - "5173:5173"
@@ -39,7 +33,9 @@ services:
       - backend
 
   iot:
-    build: ./iot
+    build:
+      context: .
+      dockerfile: iot/Dockerfile
     container_name: depin-iot
     restart: unless-stopped
     environment:
@@ -47,5 +43,7 @@ services:
       - DEPIN_API_KEY=${DEPIN_API_KEY}
       - CONTINUOUS_LOOP=true
       - STREAM_DELAY=2
+    volumes:
+      - ./data:/app/data
     depends_on:
       - backend
