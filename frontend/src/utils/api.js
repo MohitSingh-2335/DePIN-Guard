@@ -1,7 +1,7 @@
 import { getStoredToken } from './sessionAuth';
 
-const BACKEND_URL = import.meta.env.VITE_API_URL || '';
-const API_KEY     = import.meta.env.VITE_API_KEY  || '';
+const BACKEND_URL = (import.meta.env.VITE_API_URL || 'https://depin-guard-backend-nsvs.onrender.com').trim().replace(/\/$/, '');
+const API_KEY     = (import.meta.env.VITE_API_KEY  || 'ee89a0f2fe93d5479b8891461e3f0cc45b0e4101ff8615b9d53e134925ba4af2').trim();
 
 /**
  * Authenticated fetch wrapper
@@ -9,9 +9,8 @@ const API_KEY     = import.meta.env.VITE_API_KEY  || '';
  * Handles 401 auth errors by clearing session and redirecting to login
  */
 export const authenticatedFetch = async (path, options = {}) => {
-  // If path is already absolute use it directly, otherwise prepend BACKEND_URL
-  // When BACKEND_URL is empty (local dev), path must be relative e.g. /api/dashboard
-  const url = path.startsWith('http') ? path : `${BACKEND_URL}${path}`;
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  const url = path.startsWith('http') ? path : `${BACKEND_URL}${cleanPath}`;
 
   const token = getStoredToken();
 
