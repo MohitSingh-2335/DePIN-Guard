@@ -1,6 +1,6 @@
 import { getStoredToken } from './sessionAuth';
 
-const AUTH_URL = (import.meta.env.VITE_AUTH_URL || import.meta.env.VITE_API_URL || 'https://depin-guard-backend-nsvs.onrender.com').trim().replace(/\/$/, '');
+const AUTH_URL = (import.meta.env.VITE_AUTH_URL || import.meta.env.VITE_API_URL || '').trim().replace(/\/$/, '');
 
 export const authFetch = async (path, options = {}) => {
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
