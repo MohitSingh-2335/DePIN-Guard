@@ -1,4 +1,5 @@
 import os
+import json
 import time
 import joblib
 import numpy as np
@@ -14,6 +15,7 @@ DATA_SENSORS = os.path.join(ROOT_DIR, "data", "sensor_data.csv")
 DATA_PLC = os.path.join(ROOT_DIR, "data", "plc_industrial_control_dataset (1).csv")
 SCALER_PATH = os.path.join(os.path.dirname(__file__), "scaler.save")
 GNN_MODEL_PATH = os.path.join(os.path.dirname(__file__), "gnn_model.pth")
+METRICS_PATH = os.path.join(os.path.dirname(__file__), "metrics.json")
 
 NUM_DEVICES = 33
 EPOCHS = 30
@@ -43,7 +45,7 @@ def load_factory_graph_snapshots():
     # 4 core physical channels
     temp_vals = pivoted["Temperature"].values
     vib_vals = pivoted["Vibration"].values
-    pwr_vals = (pivoted["Energy_Consumption"] * 100.0).values
+    pwr_vals = (pivoted["Energy_Consumption"] * 10.0).values
     press_vals = df_plc["hydraulic_pressure"].values
     anom_vals = pivoted["is_anomaly"].values
 
@@ -135,12 +137,35 @@ def train_gnn():
     print("\nDeviceGCN Held-Out Test Evaluation:")
     print(f"  Test Device Nodes:   {len(all_targets)}")
     print(f"  Accuracy:            {acc * 100:.2f}%")
-    print(f"  Precision:           {prec:.4f}")
-    print(f"  Recall:              {rec:.4f}")
-    print(f"  F1 Score:            {f1:.4f}")
+    print(f"  Precision:           {prec * 100:.2f}%")
+    print(f"  Recall:              {rec * 100:.2f}%")
+    print(f"  F1 Score:            {f1 * 100:.2f}%")
 
     torch.save(model.state_dict(), GNN_MODEL_PATH)
     print(f"Saved trained GNN weights to: {GNN_MODEL_PATH}")
+
+    # Append to metrics.json
+    metrics = {}
+    if os.path.exists(METRICS_PATH):
+        try:
+            with open(METRICS_PATH, "r", encoding="utf-8") as f:
+                metrics = json.load(f)
+        except Exception:
+            metrics = {}
+
+    metrics.update({
+        "gnn_model_name": "PyTorch DeviceGCN Graph Neural Network",
+        "gnn_accuracy": round(acc * 100, 2),
+        "gnn_precision": round(prec * 100, 2),
+        "gnn_recall": round(rec * 100, 2),
+        "gnn_f1": round(f1 * 100, 2),
+        "gnn_tested_nodes": len(all_targets),
+        "gnn_updated_at": time.strftime("%Y-%m-%d %H:%M:%S")
+    })
+
+    with open(METRICS_PATH, "w", encoding="utf-8") as f:
+        json.dump(metrics, f, indent=2)
+    print(f"Saved GNN metrics to: {METRICS_PATH}")
     print("=" * 60)
 
 
