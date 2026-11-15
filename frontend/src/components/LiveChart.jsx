@@ -272,7 +272,7 @@ export default function LiveChart({ onConnect, onData, initialData = [] }) {
         <div className="strip-item">
           <span className="strip-label">Peak Vibration</span>
           <span className="strip-value amber">{currentPeakVib} mm/s</span>
-          <span className="strip-note">Tolerance &lt; 8.0</span>
+          <span className="strip-note">Tolerance &lt; 3.1 mm/s</span>
         </div>
         <div className="strip-item">
           <span className="strip-label">Sampling Pulse</span>
@@ -331,17 +331,30 @@ export default function LiveChart({ onConnect, onData, initialData = [] }) {
                   axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
                 />
                 <YAxis
+                  yAxisId="temp"
                   stroke="rgba(148,163,184,0.6)"
                   tick={{ fontSize: 10, fill: '#64748b' }}
                   tickLine={false}
                   axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
-                  domain={['dataMin - 2', 'dataMax + 5']}
+                  domain={chartMetric === 'vib' ? [0, 6] : ['dataMin - 1', 'dataMax + 2']}
                 />
+                {chartMetric === 'dual' && (
+                  <YAxis
+                    yAxisId="vib"
+                    orientation="right"
+                    stroke="rgba(245,158,11,0.6)"
+                    tick={{ fontSize: 10, fill: '#f59e0b' }}
+                    tickLine={false}
+                    axisLine={{ stroke: 'rgba(245,158,11,0.2)' }}
+                    domain={[0, 6]}
+                  />
+                )}
                 <Tooltip content={<CustomStreamTooltip />} />
-                <ReferenceLine y={35} stroke="#ef4444" strokeDasharray="4 4" strokeOpacity={0.7} />
+                <ReferenceLine yAxisId="temp" y={25} stroke="#ef4444" strokeDasharray="4 4" strokeOpacity={0.7} />
 
                 {(chartMetric === 'temp' || chartMetric === 'dual') && (
                   <Area
+                    yAxisId="temp"
                     type="monotone"
                     dataKey="temperature"
                     stroke="#38bdf8"
@@ -353,6 +366,7 @@ export default function LiveChart({ onConnect, onData, initialData = [] }) {
                 )}
                 {(chartMetric === 'vib' || chartMetric === 'dual') && (
                   <Line
+                    yAxisId={chartMetric === 'dual' ? 'vib' : 'temp'}
                     type="monotone"
                     dataKey="vibration"
                     stroke="#f59e0b"
