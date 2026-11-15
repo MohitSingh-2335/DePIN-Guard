@@ -3,7 +3,13 @@ import os
 import json
 import shutil
 import socket
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Union
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 REPO_ROOT      = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 BLOCKCHAIN_DIR = os.path.join(REPO_ROOT, "blockchain")
@@ -107,37 +113,52 @@ class FabricManager:
             "checks": checks,
         }
 
-    def submit_transaction(self, function_name: str, args_list: List[str]) -> Dict[str, Any]:
+    def submit_transaction(self, function_name: str, args_list: Union[List[Any], Dict[str, Any]]) -> Dict[str, Any]:
         print(f"Blockchain: Submitting '{function_name}' with args {args_list}")
 
-        if FABRIC_GATEWAY_URL:
+        gateway_url = os.getenv("FABRIC_GATEWAY_URL", FABRIC_GATEWAY_URL).rstrip("/")
+        if gateway_url:
             try:
                 import requests
-                from datetime import datetime, timezone
-                if function_name == "RecordSensorData" and len(args_list) >= 4:
+                if function_name == "RecordSensorData":
+                    if isinstance(args_list, dict):
+                        dev_id = str(args_list.get("device_id", "DEV-001"))
+                        dev_type = str(args_list.get("device_type", "Industrial Machine"))
+                        d_hash = str(args_list.get("data_hash", "hash"))
+                        raw_flag = args_list.get("is_anomalous", False)
+                        score = float(args_list.get("anomaly_score", 0.0))
+                        threshold = float(args_list.get("threshold", 0.18))
+                    else:
+                        dev_id = str(args_list[0]) if len(args_list) > 0 else "DEV-001"
+                        dev_type = str(args_list[1]) if len(args_list) > 1 else "Industrial Machine"
+                        d_hash = str(args_list[2]) if len(args_list) > 2 else "hash"
+                        raw_flag = args_list[3] if len(args_list) > 3 else False
+                        score = float(args_list[4]) if len(args_list) > 4 else 0.0
+                        threshold = float(args_list[5]) if len(args_list) > 5 else 0.18
+
+                    is_flagged = raw_flag if isinstance(raw_flag, bool) else str(raw_flag).lower() in ("true", "1")
                     payload = {
-                        "data": [
-                            str(args_list[0]),
-                            str(args_list[1]) if len(args_list) > 1 else "Industrial Machine",
-                            str(args_list[2]) if len(args_list) > 2 else "hash",
-                            bool(args_list[3]) if len(args_list) > 3 else False,
-                            float(args_list[4]) if len(args_list) > 4 else 0.0,
-                            float(args_list[5]) if len(args_list) > 5 else 0.18
-                        ]
+                        "data": [dev_id, dev_type, d_hash, is_flagged, score, threshold]
                     }
-                    res = requests.post(f"{FABRIC_GATEWAY_URL}/gradio_api/call/record_sensor", json=payload, timeout=8)
+                    res = requests.post(f"{gateway_url}/gradio_api/call/record_sensor", json=payload, timeout=8)
                     if res.status_code == 200:
                         return {"status": "success", "tx_id": res.json().get("event_id", "committed"), "mode": "cloud_fabric"}
-                elif function_name == "RecordFraudFlag" and len(args_list) >= 2:
+                elif function_name == "RecordFraudFlag":
+                    if isinstance(args_list, dict):
+                        alert_id = str(args_list.get("alert_id", "ALERT-001"))
+                        dev_id = str(args_list.get("device_id", "DEV-001"))
+                        fraud_prob = float(args_list.get("fraud_probability", 0.95))
+                        evidence = str(args_list.get("evidence", "evidence"))
+                    else:
+                        alert_id = str(args_list[0]) if len(args_list) > 0 else "ALERT-001"
+                        dev_id = str(args_list[1]) if len(args_list) > 1 else "DEV-001"
+                        fraud_prob = float(args_list[2]) if len(args_list) > 2 else 0.95
+                        evidence = str(args_list[3]) if len(args_list) > 3 else "evidence"
+
                     payload = {
-                        "data": [
-                            str(args_list[0]),
-                            str(args_list[1]),
-                            float(args_list[2]) if len(args_list) > 2 else 0.95,
-                            str(args_list[3]) if len(args_list) > 3 else "evidence"
-                        ]
+                        "data": [alert_id, dev_id, fraud_prob, evidence]
                     }
-                    res = requests.post(f"{FABRIC_GATEWAY_URL}/gradio_api/call/record_fraud", json=payload, timeout=8)
+                    res = requests.post(f"{gateway_url}/gradio_api/call/record_fraud", json=payload, timeout=8)
                     if res.status_code == 200:
                         return {"status": "success", "tx_id": res.json().get("event_id", "committed"), "mode": "cloud_fabric"}
             except Exception as e:
