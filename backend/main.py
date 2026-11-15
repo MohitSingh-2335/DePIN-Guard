@@ -289,8 +289,9 @@ default_origins = [
     "http://127.0.0.1:3000",
     "http://127.0.0.1:5173",
 ]
-cors_env       = os.getenv("CORS_ALLOWED_ORIGINS", "")
-cors_regex_env = os.getenv("CORS_ALLOWED_ORIGIN_REGEX", "").strip()
+cors_env = os.getenv("CORS_ALLOWED_ORIGINS", "")
+cors_regex_default = r"^https?:\/\/(localhost|127\.0\.0\.1|.*\.vercel\.app|.*\.onrender\.com)(:\d+)?$"
+cors_regex_env = os.getenv("CORS_ALLOWED_ORIGIN_REGEX", cors_regex_default).strip()
 trusted_origins = (
     [o.strip() for o in cors_env.split(",") if o.strip()]
     or default_origins
@@ -299,7 +300,7 @@ trusted_origins = (
 app.add_middleware(
     CORSMiddleware,
     allow_origins=trusted_origins,
-    allow_origin_regex=cors_regex_env or None,
+    allow_origin_regex=cors_regex_env,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
