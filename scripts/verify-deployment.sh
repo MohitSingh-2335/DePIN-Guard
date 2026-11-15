@@ -86,62 +86,24 @@ check_file "iot/requirements.txt" "iot/requirements.txt"
 
 # ---------------------------------------------------------------------
 echo ""
-echo -e "${BLUE}[3/4] Checking environment files...${NC}"
+echo -e "${BLUE}[3/4] Checking unified environment configuration...${NC}"
 echo ""
-check_file ".env" ".env (root)"
-check_file "backend/.env" "backend/.env"
-check_file "frontend/.env" "frontend/.env"
-check_file "iot/.env" "iot/.env"
+check_file ".env" ".env (root unified)"
 check_file ".env.example" ".env.example (template)"
+check_file "docker-compose.yml" "docker-compose.yml"
+check_file "deployment/hf-fabric-space/Dockerfile" "Hugging Face Space Dockerfile"
+check_file "deployment/hf-fabric-space/server.py" "Hugging Face Space Server"
 
 # ---------------------------------------------------------------------
 echo ""
 echo -e "${BLUE}[4/4] Checking configuration content...${NC}"
 echo ""
 
-# Check .env has critical values
+# Check root .env has critical values
 if [ -f ".env" ]; then
     check_content ".env" "DEPIN_API_KEY=" ".env has DEPIN_API_KEY"
     check_content ".env" "JWT_SECRET_KEY=" ".env has JWT_SECRET_KEY"
-fi
-
-# Check backend.env has Docker networking URLs
-if [ -f "backend/.env" ]; then
-    echo ""
-    echo "Checking backend/.env for Docker networking..."
-    if grep -q "AI_SERVICE_URL=http://ai-service:10000" backend/.env; then
-        echo -e "${GREEN}[OK]${NC} backend/.env uses Docker service name for AI"
-        ((SUCCESS++))
-    else
-        echo -e "${RED}[FAIL]${NC} backend/.env still has tunnel URL for AI_SERVICE_URL"
-        ((ERRORS++))
-    fi
-fi
-
-# Check frontend.env has localhost URLs
-if [ -f "frontend/.env" ]; then
-    echo ""
-    echo "Checking frontend/.env for localhost URLs..."
-    if grep -q "VITE_API_URL=http://localhost:8000" frontend/.env; then
-        echo -e "${GREEN}[OK]${NC} frontend/.env uses localhost for API"
-        ((SUCCESS++))
-    else
-        echo -e "${RED}[FAIL]${NC} frontend/.env still has tunnel URL"
-        ((ERRORS++))
-    fi
-fi
-
-# Check iot.env has Docker service name
-if [ -f "iot/.env" ]; then
-    echo ""
-    echo "Checking iot/.env for Docker service name..."
-    if grep -q "BACKEND_URL=http://backend:8000" iot/.env; then
-        echo -e "${GREEN}[OK]${NC} iot/.env uses Docker service name"
-        ((SUCCESS++))
-    else
-        echo -e "${RED}[FAIL]${NC} iot/.env still has tunnel URL"
-        ((ERRORS++))
-    fi
+    check_content ".env" "MONGODB_URI=" ".env has MONGODB_URI"
 fi
 
 # ---------------------------------------------------------------------
@@ -157,9 +119,9 @@ if [ $ERRORS -eq 0 ]; then
     echo -e "${GREEN}ALL CHECKS PASSED!${NC}"
     echo ""
     echo "Next steps:"
-    echo "  1. docker-compose -f docker-compose.prod.yml build"
-    echo "  2. docker-compose -f docker-compose.prod.yml up -d"
-    echo "  3. docker-compose -f docker-compose.prod.yml ps"
+    echo "  1. docker-compose build"
+    echo "  2. docker-compose up -d"
+    echo "  3. docker-compose ps"
     echo ""
     exit 0
 else
