@@ -83,6 +83,8 @@ const DashboardPage = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [stats, setStats] = useState({ activeDevices: 33, totalData: null, alerts: null, uptime: 99.9 });
   const [recentData, setRecentData] = useState([]);
+  const [latestDevices, setLatestDevices] = useState([]);
+  const [blockchainActive, setBlockchainActive] = useState(false);
   const [timePeriod, setTimePeriod] = useState('24h');
   const [chartData, setChartData] = useState([]);
   const [showAllSensors, setShowAllSensors] = useState(false);
@@ -108,10 +110,11 @@ const DashboardPage = () => {
       id: `${item.device_id}-${Date.now()}`,
       device: item.device_id,
       machine_name: item.machine_name || (machineMeta ? machineMeta.name : item.device_id),
-      value: item.temperature != null ? Number(item.temperature).toFixed(1) : 25.0,
-      vib: item.vibration != null ? Number(item.vibration).toFixed(2) : 0.45,
-      pwr: item.power_usage != null ? Number(item.power_usage).toFixed(1) : 15.0,
-      pressure: item.pressure != null ? Number(item.pressure).toFixed(1) : 0.0,
+      value: item.temperature != null ? Number(item.temperature).toFixed(1) : 0,
+      temp: item.temperature != null ? Number(item.temperature) : 0,
+      vib: item.vibration != null ? Number(item.vibration).toFixed(2) : 0,
+      pwr: item.power_usage != null ? Number(item.power_usage).toFixed(1) : 0,
+      pressure: item.pressure != null ? Number(item.pressure).toFixed(1) : 0,
       unit: '°C',
       status: item.is_anomaly ? 'critical' : 'normal',
       time: new Date().toLocaleTimeString(),
@@ -119,6 +122,15 @@ const DashboardPage = () => {
     };
 
     setRecentData(prev => [newRecord, ...prev.filter(r => r.device !== item.device_id).slice(0, 32)]);
+    setLatestDevices(prev => {
+      const idx = prev.findIndex(d => d.device === item.device_id);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = newRecord;
+        return copy;
+      }
+      return [newRecord, ...prev];
+    });
   };
 
   const fetchDashboardData = async () => {
@@ -126,12 +138,18 @@ const DashboardPage = () => {
       const response = await authenticatedFetch('/api/dashboard');
       if (response && response.ok) {
         const json = await response.json();
+        if (json.blockchain_active !== undefined) {
+          setBlockchainActive(Boolean(json.blockchain_active));
+        }
         setStats(prev => ({
           activeDevices: json.stats?.active_devices ?? 33,
           totalData: Math.max(Number(prev.totalData || 0), Number(json.stats?.total_scans ?? 0)),
           alerts: Math.max(Number(prev.alerts || 0), Number(json.stats?.anomalies ?? 0)),
           uptime: json.stats?.uptime ?? 99.9,
         }));
+        if (json.latest_devices && Array.isArray(json.latest_devices)) {
+          setLatestDevices(json.latest_devices);
+        }
         const history = json.recent_data ?? [];
         setRecentData(history.length > 0
           ? history.map((rec, i) => {
@@ -141,6 +159,7 @@ const DashboardPage = () => {
               device: rec.device ?? 'Unknown',
               machine_name: rec.machine_name || (machineMeta ? machineMeta.name : rec.device),
               value: rec.temp ?? 0,
+              temp: rec.temp ?? 0,
               vib: rec.vib ?? 0,
               pwr: rec.pwr ?? 0,
               pressure: rec.pressure ?? 0,
@@ -148,6 +167,16 @@ const DashboardPage = () => {
               status: rec.status ?? 'normal',
               time: rec.timestamp ? new Date(rec.timestamp).toLocaleTimeString() : '—',
               status_short: rec.status_short,
+            };
+          })
+          : []
+        );
+      }
+    } catch {
+    } finally {
+      setLoading(false);
+    }
+  };
             };
           })
           : []
@@ -252,22 +281,20 @@ const DashboardPage = () => {
 
   const visibleSensors = showAllSensors ? recentData : recentData.slice(0, SENSOR_PREVIEW);
 
-  const fleetList = MACHINE_DIRECTORY.map((m, idx) => {
-    const latest = recentData.find(r => r.device === m.id);
-    const fallbackTemp = 22.0 + ((idx * 7) % 18);
-    const fallbackVib = 0.2 + ((idx * 3) % 10) * 0.08;
-    const fallbackPwr = 12.0 + ((idx * 11) % 40);
+  const fleetList = MACHINE_DIRECTORY.map((m) => {
+    const latest = latestDevices.find(r => r.device === m.id) || recentData.find(r => r.device === m.id);
+    const hasData = Boolean(latest);
     return {
       device_id: m.id,
       machine_name: m.name,
       type: m.type,
       status: latest ? latest.status : 'normal',
-      value: latest ? latest.value : fallbackTemp.toFixed(1),
-      vib: latest ? latest.vib : fallbackVib.toFixed(2),
-      pwr: latest ? latest.pwr : fallbackPwr.toFixed(1),
-      pressure: latest ? latest.pressure : 0.0,
+      value: hasData ? Number(latest.temp ?? latest.value ?? 0).toFixed(1) : '—',
+      vib: hasData ? Number(latest.vib ?? 0).toFixed(2) : '—',
+      pwr: hasData ? Number(latest.pwr ?? 0).toFixed(1) : '—',
+      pressure: hasData ? Number(latest.pressure ?? 0).toFixed(1) : '—',
       unit: '°C',
-      time: latest ? latest.time : (lastLiveTick || 'Live'),
+      time: latest ? (latest.time || (latest.timestamp ? new Date(latest.timestamp).toLocaleTimeString() : 'Live')) : (lastLiveTick || 'Awaiting'),
       status_short: latest?.status_short || (latest?.status === 'critical' ? 'Elevated reading detected' : 'Operating within safe parameters'),
     };
   });
@@ -305,7 +332,7 @@ const DashboardPage = () => {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '0.78rem', color: '#94a3b8', background: 'rgba(255,255,255,0.04)', padding: '6px 12px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.08)' }}>
-              Fabric Gateway: <strong style={{ color: '#38bdf8' }}>Connected</strong>
+              Ledger: <strong style={{ color: blockchainActive ? '#38bdf8' : '#22c55e' }}>{blockchainActive ? 'Connected (Fabric)' : 'Local Hash-Chain Ledger'}</strong>
             </span>
             <button className="refresh-button" onClick={handleRefresh} disabled={refreshing}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
