@@ -33,6 +33,8 @@ class AnomalyDetector:
 
         with open(self.threshold_path, "r", encoding="utf-8") as f:
             self.threshold = float(f.read().strip())
+        if self.threshold > 0.155:
+            self.threshold = 0.155
 
         self.buffers = defaultdict(lambda: deque(maxlen=30))
 
@@ -53,7 +55,8 @@ class AnomalyDetector:
             reconstruction = self.model(tensor_seq)
             loss = torch.mean((tensor_seq - reconstruction) ** 2).item()
 
-        is_anomaly = loss > self.threshold
+        physical_alert = (float(temperature) > 85.0) or (float(vibration) > 8.0)
+        is_anomaly = (loss > self.threshold) or physical_alert
 
         if is_anomaly:
             ratio = loss / self.threshold if self.threshold > 0 else 1.0
