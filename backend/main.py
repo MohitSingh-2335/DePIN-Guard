@@ -168,6 +168,7 @@ except ImportError as e:
 # ---------------------------------------------------------------------------
 try:
     import sys
+    import torch
     sys.path.append(os.path.join(ROOT_DIR, "ai-service"))
     from gnn_model import DeviceGCN, build_factory_adjacency_matrix
     GNN_MODEL_PATH = os.path.join(ROOT_DIR, "ai-service", "gnn_model.pth")
