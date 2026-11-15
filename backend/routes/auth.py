@@ -4,9 +4,14 @@ from typing import Optional
 
 import jwt
 import bcrypt
+from dotenv import load_dotenv
 from fastapi import APIRouter, HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
+
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+load_dotenv(os.path.join(ROOT_DIR, ".env"))
+load_dotenv()
 
 try:
     import database as db_module
@@ -18,7 +23,7 @@ bearer_scheme = HTTPBearer(auto_error=True)
 
 SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 if not SECRET_KEY:
-    SECRET_KEY = "4f4b60bf5496818cf30933a1030d159630dd00ef8d102ce13abc6acfe38de0a6"
+    raise RuntimeError("JWT_SECRET_KEY must be set in .env")
 
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 REFRESH_TOKEN_EXPIRE_HOURS = 24
