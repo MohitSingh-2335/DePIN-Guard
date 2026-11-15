@@ -17,8 +17,12 @@ const MAX_POINTS = 20;
 const PREVIEW_COUNT = 5;
 
 const getWsUrl = () => {
-  const apiUrl = (import.meta.env.VITE_API_URL || 'https://depin-guard-backend-nsvs.onrender.com').trim().replace(/\/$/, '');
-  return apiUrl.replace('https://', 'wss://').replace('http://', 'ws://') + '/ws/live';
+  const apiUrl = (import.meta.env.VITE_API_URL || '').trim().replace(/\/$/, '');
+  if (!apiUrl) {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${proto}//${window.location.host}/ws/live`;
+  }
+  return apiUrl.replace(/^https/, 'wss').replace(/^http/, 'ws') + '/ws/live';
 };
 
 const CustomStreamTooltip = ({ active, payload }) => {
