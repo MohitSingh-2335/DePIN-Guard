@@ -91,8 +91,8 @@ echo ""
 check_file ".env" ".env (root unified)"
 check_file ".env.example" ".env.example (template)"
 check_file "docker-compose.yml" "docker-compose.yml"
-check_file "deployment/hf-fabric-space/Dockerfile" "Hugging Face Space Dockerfile"
-check_file "deployment/hf-fabric-space/server.py" "Hugging Face Space Server"
+check_file "deployment/hf-fabric-space/app.py" "Hugging Face Space Gateway (app.py)"
+check_file "deployment/hf-fabric-space/requirements.txt" "Hugging Face Space requirements.txt"
 
 # ---------------------------------------------------------------------
 echo ""
