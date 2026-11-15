@@ -9,7 +9,7 @@ const getWsUrl = () => {
   return apiUrl.replace('https://', 'wss://').replace('http://', 'ws://') + '/ws/live';
 };
 
-export default function LiveChart({ onConnect, initialData = [] }) {
+export default function LiveChart({ onConnect, onData, initialData = [] }) {
   const [data, setData]           = useState([]);
   const [connected, setConnected] = useState(false);
   const [expanded, setExpanded]   = useState(false);
@@ -19,9 +19,11 @@ export default function LiveChart({ onConnect, initialData = [] }) {
     if (data.length === 0 && initialData && initialData.length > 0) {
       const mapped = initialData.map(r => ({
         device_id: r.device,
+        machine_name: r.machine_name || r.device,
         temperature: r.value ?? r.temp,
         vibration: r.vib,
         power_usage: r.pwr,
+        pressure: r.pressure ?? 0,
         is_anomaly: r.status === 'critical' || r.status === 'warning'
       }));
       setData(mapped);
@@ -53,6 +55,7 @@ export default function LiveChart({ onConnect, initialData = [] }) {
           const parsed = JSON.parse(event.data);
           if (!parsed || typeof parsed !== 'object') return;
           setData((prev) => [...prev.slice(-(MAX_POINTS - 1)), parsed]);
+          onData?.(parsed);
         } catch {}
       };
 
@@ -70,16 +73,21 @@ export default function LiveChart({ onConnect, initialData = [] }) {
   return (
     <div className="live-chart-container">
       <div className="live-chart-header">
-        <h3 className="live-chart-title">Live Sensor Updates</h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <h3 className="live-chart-title">Live Sensor Stream (Continuous Ingestion)</h3>
+          <span style={{ fontSize: '0.72rem', color: '#38bdf8', background: 'rgba(56,189,248,0.1)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(56,189,248,0.2)' }}>
+            2s Telemetry Interval
+          </span>
+        </div>
         <span className={`connection-badge ${connected ? 'connected' : 'disconnected'}`}>
           <span className={`status-dot ${connected ? 'connected' : 'disconnected'}`} />
-          {connected ? 'Connected' : 'Disconnected'}
+          {connected ? 'Live Connected' : 'Reconnecting...'}
         </span>
       </div>
 
       {data.length === 0 ? (
         <p className="live-chart-empty">
-          {connected ? 'Waiting for sensor data...' : 'Connecting to live data stream...'}
+          {connected ? 'Streaming real industrial telemetry...' : 'Connecting to live data stream...'}
         </p>
       ) : (
         <>
@@ -87,23 +95,32 @@ export default function LiveChart({ onConnect, initialData = [] }) {
             <table className="live-chart-table">
               <thead>
                 <tr>
-                  <th>Device</th>
-                  <th>Temp °C</th>
+                  <th>Machine / Device</th>
+                  <th>Temperature</th>
                   <th>Vibration</th>
-                  <th>Power W</th>
-                  <th>Status</th>
+                  <th>Power Usage</th>
+                  <th>Pressure</th>
+                  <th>AI Detection</th>
                 </tr>
               </thead>
               <tbody>
                 {visibleRows.map((row, i) => (
                   <tr key={i} className={row.is_anomaly ? 'anomaly-row' : 'normal-row'}>
-                    <td>{row.device_id   ?? 'N/A'}</td>
-                    <td>{row.temperature ?? 'N/A'}</td>
-                    <td>{row.vibration   ?? 'N/A'}</td>
-                    <td>{row.power_usage ?? 'N/A'}</td>
+                    <td style={{ fontWeight: 600 }}>
+                      <span style={{ color: '#38bdf8', fontFamily: 'monospace' }}>{row.device_id ?? 'Device'}</span>
+                      {row.machine_name && row.machine_name !== row.device_id && (
+                        <span style={{ color: '#94a3b8', fontSize: '0.75rem', marginLeft: '6px' }}>
+                          ({row.machine_name})
+                        </span>
+                      )}
+                    </td>
+                    <td>{row.temperature != null ? `${Number(row.temperature).toFixed(1)} °C` : '—'}</td>
+                    <td>{row.vibration != null ? `${Number(row.vibration).toFixed(2)} mm/s` : '—'}</td>
+                    <td>{row.power_usage != null ? `${Number(row.power_usage).toFixed(1)} W` : '—'}</td>
+                    <td>{row.pressure != null && row.pressure > 0 ? `${Number(row.pressure).toFixed(1)} bar` : '—'}</td>
                     <td>
                       <span className={`status-cell ${row.is_anomaly ? 'anomaly' : 'normal'}`}>
-                        {row.is_anomaly ? 'Anomaly' : 'Normal'}
+                        {row.is_anomaly ? 'Critical Alert' : 'Normal'}
                       </span>
                     </td>
                   </tr>
