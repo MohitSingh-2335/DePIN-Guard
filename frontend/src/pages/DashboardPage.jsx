@@ -177,16 +177,6 @@ const DashboardPage = () => {
       setLoading(false);
     }
   };
-            };
-          })
-          : []
-        );
-      }
-    } catch {
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const fetchChartData = async (period) => {
     try {
