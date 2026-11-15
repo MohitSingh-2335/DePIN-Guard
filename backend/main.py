@@ -14,6 +14,7 @@ import random
 import requests as http_requests
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Security, status, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -257,7 +258,7 @@ app.include_router(auth_router, prefix="/api")
 # Security helpers
 # ---------------------------------------------------------------------------
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
-bearer_scheme  = HTTPBearer(auto_error=True)
+bearer_scheme  = HTTPBearer(auto_error=False)
 
 if not API_KEY:
     raise RuntimeError("DEPIN_API_KEY is required in root .env before starting")
@@ -266,13 +267,38 @@ print("API Key loaded and verified.")
 print(f"Anomaly threshold: {_ANOMALY_THRESHOLD}")
 
 
-async def verify_api_key(api_key: str = Security(api_key_header)):
-    if not API_KEY or api_key != API_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Invalid or missing API key",
-        )
-    return api_key
+async def verify_auth_or_api_key(
+    request: Request,
+    api_key: Optional[str] = Security(api_key_header),
+    auth: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+):
+    if api_key and API_KEY and api_key == API_KEY:
+        return {"auth": "api_key"}
+
+    token = None
+    if auth and auth.credentials:
+        token = auth.credentials
+    else:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header.split(" ", 1)[1].strip()
+
+    if token and jwt and SECRET_KEY:
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+            user = payload.get("sub")
+            if user:
+                return {"auth": "jwt", "user": user}
+        except Exception:
+            pass
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Valid API key or authorization token required",
+    )
+
+
+verify_api_key = verify_auth_or_api_key
 
 
 # Include routers with API key protection (must be after verify_api_key is defined)
