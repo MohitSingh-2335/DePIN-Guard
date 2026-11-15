@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import Layout from '../components/layout/Layout';
-import { BACKEND_URL } from '../utils/api';
+import { authenticatedFetch, BACKEND_URL } from '../utils/api';
 import "./SecurityPage.css";
 
 const SECURITY_PASSWORD = import.meta.env.VITE_SECURITY_PASSWORD || 'depin2026';
@@ -63,84 +63,42 @@ const SecurityPage = () => {
     { name: 'client.crt', desc: 'IoT Simulator Certificate', issuer: 'DePIN-Guard CA', usage: 'mTLS Client Auth' },
   ];
 
-  const runAttackSimulation = async () => {
+  const runAttackSimulation = async (attackType = 'all') => {
     setRunning(true);
     setAttackLog([]);
     setRateStats({ total: 0, blocked: 0 });
 
-    const tests = [
-      {
-        name: 'Unsigned Payload Rejection',
-        execute: async () => {
-          const res = await fetch(`${BACKEND_URL}/api/process_data`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              device_id: 'Test-01',
-              temperature: 25.0,
-              vibration: 0.5,
-              power_usage: 50.0,
-              timestamp: new Date().toISOString()
-            })
-          });
-          return { status: res.status, blocked: res.status === 403, detail: `Unsigned request rejected with HTTP ${res.status}` };
-        }
-      },
-      {
-        name: 'Missing API Key Guard',
-        execute: async () => {
-          const res = await fetch(`${BACKEND_URL}/api/dashboard`);
-          return { status: res.status, blocked: res.status === 403 || res.status === 401, detail: `Protected route rejected without API key (HTTP ${res.status})` };
-        }
-      },
-      {
-        name: 'Malformed Input Validation',
-        execute: async () => {
-          const res = await fetch(`${BACKEND_URL}/api/process_data`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ temperature: 'invalid_type' })
-          });
-          return { status: res.status, blocked: res.status === 422 || res.status === 400 || res.status === 403, detail: `Pydantic validation rejected malformed data (HTTP ${res.status})` };
-        }
-      },
-      {
-        name: 'JWT Profile Protection',
-        execute: async () => {
-          const authUrl = import.meta.env.VITE_AUTH_URL || 'http://localhost:8001';
-          const res = await fetch(`${authUrl}/profile`);
-          return { status: res.status, blocked: res.status === 401, detail: `Auth-service rejected unauthenticated request (HTTP ${res.status})` };
-        }
-      },
-      {
-        name: 'Audit Subsystem Diagnostics',
-        execute: async () => {
-          const res = await fetch(`${BACKEND_URL}/api/health`);
-          return { status: res.status, blocked: true, detail: `Audit telemetry active - health status ${res.status}` };
-        }
-      }
-    ];
+    try {
+      const res = await authenticatedFetch('/api/security/test-attack', {
+        method: 'POST',
+        body: JSON.stringify({ attack_type: attackType })
+      });
 
-    for (const test of tests) {
-      try {
-        const result = await test.execute();
-        setAttackLog(prev => [...prev, {
-          type: test.name,
-          result: result.blocked ? 'BLOCKED' : 'ALLOWED',
-          detail: result.detail,
-          time: new Date().toLocaleTimeString()
-        }]);
-        setRateStats(prev => ({ total: prev.total + 1, blocked: prev.blocked + (result.blocked ? 1 : 0) }));
-      } catch (err) {
-        setAttackLog(prev => [...prev, {
-          type: test.name,
-          result: 'BLOCKED',
-          detail: 'Rejected or network endpoint offline',
-          time: new Date().toLocaleTimeString()
-        }]);
-        setRateStats(prev => ({ total: prev.total + 1, blocked: prev.blocked + 1 }));
+      if (res && res.ok) {
+        const data = await res.json();
+        const results = data.results || [];
+        setAttackLog(results.map(r => ({
+          type: r.name,
+          result: r.status,
+          detail: `${r.defense_layer} | ${r.detail} (${r.latency_ms}ms)`,
+          time: new Date().toLocaleTimeString(),
+          isSuccess: r.status === 'BLOCKED' || r.status === 'DETECTED_BY_AI'
+        })));
+        setRateStats({
+          total: results.length,
+          blocked: results.filter(r => r.status === 'BLOCKED' || r.status === 'DETECTED_BY_AI').length
+        });
+      } else {
+        throw new Error(`Server returned HTTP ${res?.status || 'network error'}`);
       }
-      await new Promise(r => setTimeout(r, 200));
+    } catch (err) {
+      setAttackLog([{
+        type: 'Security Challenge Execution',
+        result: 'ERROR',
+        detail: `Failed to execute live attack test: ${err.message}`,
+        time: new Date().toLocaleTimeString(),
+        isSuccess: false
+      }]);
     }
     setRunning(false);
   };
@@ -253,35 +211,57 @@ const SecurityPage = () => {
         <div className="sec-section">
           <div className="attack-header">
             <div>
-              <h2 className="sec-section-title">Live Penetration and Defense Verification</h2>
-              <p className="attack-subtitle">Executes real live HTTP security challenges against backend</p>
+              <h2 className="sec-section-title">Live Penetration & Defense Verification</h2>
+              <p className="attack-subtitle">Replays real MQTTset attack vectors against HMAC, Rate Limiting, Pydantic, and LSTM Autoencoder</p>
             </div>
-            <button className={`run-attack-btn ${running ? 'running' : ''}`} onClick={runAttackSimulation} disabled={running}>
-              {running ? "Running Tests..." : "Run Defense Verification"}
-            </button>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button className={`run-attack-btn ${running ? 'running' : ''}`} onClick={() => runAttackSimulation('all')} disabled={running}>
+                {running ? "Testing..." : "Run All 4 Attacks"}
+              </button>
+              <button className="lock-btn" style={{ padding: '8px 12px', fontSize: '12px' }} onClick={() => runAttackSimulation('bruteforce')} disabled={running}>
+                Bruteforce
+              </button>
+              <button className="lock-btn" style={{ padding: '8px 12px', fontSize: '12px' }} onClick={() => runAttackSimulation('flood')} disabled={running}>
+                Flood
+              </button>
+              <button className="lock-btn" style={{ padding: '8px 12px', fontSize: '12px' }} onClick={() => runAttackSimulation('malformed')} disabled={running}>
+                Malformed
+              </button>
+              <button className="lock-btn" style={{ padding: '8px 12px', fontSize: '12px' }} onClick={() => runAttackSimulation('slowite')} disabled={running}>
+                SlowITE Tampering
+              </button>
+            </div>
           </div>
 
           {(attackLog.length > 0 || running) && (
             <div className="attack-progress">
               <div className="attack-progress-bar">
-                <div className="attack-progress-fill" style={{ width: `${(attackLog.length / 5) * 100}%` }} />
+                <div className="attack-progress-fill" style={{ width: `${Math.min(100, (attackLog.length / (rateStats.total || 4)) * 100)}%` }} />
               </div>
-              <span>{attackLog.length}/5 tests complete</span>
+              <span>{rateStats.blocked}/{rateStats.total || attackLog.length} defenses successful</span>
             </div>
           )}
 
           <div className="attack-log">
-            {attackLog.length === 0 && !running && <p className="attack-empty">Ready to test security defenses.</p>}
+            {attackLog.length === 0 && !running && <p className="attack-empty">Ready to test security defenses with real attack datasets.</p>}
             {attackLog.map((log, i) => (
               <div className="attack-entry" key={i}>
                 <div className="attack-info">
                   <div className="attack-type">{log.type}</div>
                   <div className="attack-detail">{log.detail}</div>
                 </div>
-                <span className="attack-result blocked">{log.result}</span>
+                <span className={`attack-result ${log.isSuccess ? 'blocked' : 'allowed'}`} style={{
+                  backgroundColor: log.result === 'DETECTED_BY_AI' ? 'rgba(168, 85, 247, 0.2)' : undefined,
+                  color: log.result === 'DETECTED_BY_AI' ? '#c084fc' : undefined,
+                  borderColor: log.result === 'DETECTED_BY_AI' ? '#a855f7' : undefined
+                }}>
+                  {log.result}
+                </span>
               </div>
             ))}
-            {attackLog.length === 5 && <div className="attack-summary">All security checks passed - Defense in depth verified.</div>}
+            {attackLog.length > 0 && rateStats.blocked === attackLog.length && !running && (
+              <div className="attack-summary">Defense in depth verified: All attack vectors blocked or detected by AI.</div>
+            )}
           </div>
         </div>
       </div>
