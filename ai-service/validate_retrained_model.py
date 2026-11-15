@@ -46,7 +46,7 @@ def load_dataset():
     fused = pd.DataFrame({
         "temperature": pivoted["Temperature"].round(2),
         "vibration": pivoted["Vibration"].round(2),
-        "power_usage": (pivoted["Energy_Consumption"] * 100.0).round(2),
+        "power_usage": (pivoted["Energy_Consumption"] * 10.0).round(2),
         "pressure": df_plc["hydraulic_pressure"].round(2),
         "is_anomaly": pivoted["is_anomaly"]
     })
