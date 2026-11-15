@@ -720,20 +720,6 @@ async def _execute_telemetry_pipeline(data: SensorData) -> dict:
     )
     await save_sensor_data(sensor_doc)
 
-    # --- Broadcast to WebSocket clients ---
-    await broadcast_data({
-        "device_id":    data.device_id,
-        "machine_name": data.machine_name or data.device_id,
-        "temperature":  data.temperature,
-        "vibration":    data.vibration,
-        "power_usage":  data.power_usage,
-        "pressure":     data.pressure,
-        "is_anomaly":   is_anomaly,
-        "status":       "critical" if is_anomaly else "normal",
-        "status_short": data.status_short or ("Operating normally" if not is_anomaly else "Abnormal reading detected"),
-        "timestamp":    datetime.now().isoformat(),
-    })
-
     # --- Update in-memory counters ---
     system_state["dashboard"]["total_scans"] += 1
     system_state["ai"]["total_analyses"] += 1
@@ -755,6 +741,24 @@ async def _execute_telemetry_pipeline(data: SensorData) -> dict:
         system_state["ai"]["anomalies_found"]        += 1
         system_state["blockchain"]["total_blocks"]   += 1
         system_state["blockchain"]["transactions"]   += 1
+
+    # --- Broadcast to WebSocket clients ---
+    await broadcast_data({
+        "device_id":    data.device_id,
+        "machine_name": data.machine_name or data.device_id,
+        "temperature":  data.temperature,
+        "vibration":    data.vibration,
+        "power_usage":  data.power_usage,
+        "pressure":     data.pressure,
+        "is_anomaly":   is_anomaly,
+        "status":       "critical" if is_anomaly else "normal",
+        "status_short": data.status_short or ("Operating normally" if not is_anomaly else "Abnormal reading detected"),
+        "timestamp":    datetime.now().isoformat(),
+        "total_scans":  system_state["dashboard"]["total_scans"],
+        "anomalies":    system_state["dashboard"]["anomalies"],
+    })
+
+    if is_anomaly:
 
         # --- Save to MongoDB fraud alerts ---
         fraud_alert = FraudAlertModel(
