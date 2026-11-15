@@ -15,14 +15,7 @@ from typing import Optional, List
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import gradio as gr
-
-# ZeroGPU decorator for Hugging Face Free ZeroGPU tier
-try:
-    import spaces
-    gpu_decorator = spaces.GPU
-except ImportError:
-    def gpu_decorator(fn):
-        return fn
+import spaces
 
 
 # ---------------------------------------------------------------------------
@@ -351,6 +344,17 @@ def get_blocks_table():
     return rows
 
 
+@spaces.GPU
+def refresh_ledger_state():
+    return (
+        str(len(load_ledger())),
+        fabric_state["version"],
+        fabric_state["peer_status"],
+        fabric_state["orderer_status"],
+        get_blocks_table()
+    )
+
+
 with gr.Blocks(title="DePIN-Guard Fabric Gateway") as demo:
     gr.Markdown("# Hyperledger Fabric 2.5 Consortium Explorer")
     gr.Markdown("Real-time native Hyperledger Fabric network running on Linux amd64 native binaries with zero Docker containers.")
@@ -367,19 +371,9 @@ with gr.Blocks(title="DePIN-Guard Fabric Gateway") as demo:
         interactive=False
     )
 
-    @gpu_decorator
-    def on_refresh():
-        return (
-            str(len(load_ledger())),
-            fabric_state["version"],
-            fabric_state["peer_status"],
-            fabric_state["orderer_status"],
-            get_blocks_table()
-        )
-
     refresh_btn = gr.Button("Refresh Blockchain Ledger")
     refresh_btn.click(
-        fn=on_refresh,
+        fn=refresh_ledger_state,
         inputs=[],
         outputs=[total_blocks_text, fabric_ver_text, peer_text, orderer_text, blocks_table]
     )
