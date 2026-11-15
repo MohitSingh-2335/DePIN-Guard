@@ -1,5 +1,0 @@
-requests==2.31.0
-python-dotenv==1.0.1
-paho-mqtt==1.6.1
-aiohttp==3.9.5
-cryptography==42.0.8
