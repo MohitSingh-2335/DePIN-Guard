@@ -355,7 +355,6 @@ def refresh_ledger_state():
     )
 
 
-@spaces.GPU
 def record_sensor_api(device_id: str, asset_type: str, data_hash: str, is_anomaly: bool, anomaly_score: float, threshold: float):
     ledger = load_ledger()
     prev_hash = ledger[-1]["hash"] if ledger else "0"
@@ -391,7 +390,6 @@ def record_sensor_api(device_id: str, asset_type: str, data_hash: str, is_anomal
     })
 
 
-@spaces.GPU
 def record_fraud_api(asset_id: str, fraud_type: str, confidence: float, evidence_hash: str):
     ledger = load_ledger()
     prev_hash = ledger[-1]["hash"] if ledger else "0"
