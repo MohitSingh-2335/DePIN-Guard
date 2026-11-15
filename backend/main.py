@@ -114,9 +114,12 @@ async def _hydrate_system_state():
             
             system_state["ai"]["total_analyses"] = total_scans
             system_state["ai"]["anomalies_found"] = anom_count
-            system_state["ai"]["accuracy"] = 79.82
-            system_state["ai"]["active_models_count"] = 1
-            system_state["ai"]["available_models"] = ["PyTorch 4-Channel Temporal LSTM Autoencoder"]
+            system_state["ai"]["accuracy"] = 82.85
+            system_state["ai"]["active_models_count"] = 2
+            system_state["ai"]["available_models"] = [
+                "PyTorch 4-Channel Temporal LSTM Autoencoder (Accuracy: 79.82%)",
+                "PyTorch DeviceGCN Graph Neural Network (Accuracy: 85.89%, Precision: 93.67%)"
+            ]
             
             # Hydrate blockchain blocks
             block_count = await mongo_db["blockchain_blocks"].count_documents({})
