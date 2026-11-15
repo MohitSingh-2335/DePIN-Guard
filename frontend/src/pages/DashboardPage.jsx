@@ -94,11 +94,12 @@ const DashboardPage = () => {
 
   const handleLiveTelemetry = (item) => {
     if (!item || !item.device_id) return;
+    setStreamConnected(true);
     setLastLiveTick(new Date().toLocaleTimeString());
     setStats(prev => ({
       activeDevices: 33,
-      totalData: (prev.totalData || 0) + 1,
-      alerts: item.is_anomaly ? (prev.alerts || 0) + 1 : (prev.alerts || 0),
+      totalData: item.total_scans != null ? Math.max(Number(prev.totalData || 0) + 1, Number(item.total_scans)) : (Number(prev.totalData || 0) + 1),
+      alerts: item.anomalies != null ? Math.max(Number(prev.alerts || 0), Number(item.anomalies)) : (item.is_anomaly ? Number(prev.alerts || 0) + 1 : Number(prev.alerts || 0)),
       uptime: prev.uptime || 99.9,
     }));
 
@@ -125,12 +126,12 @@ const DashboardPage = () => {
       const response = await authenticatedFetch('/api/dashboard');
       if (response && response.ok) {
         const json = await response.json();
-        setStats({
+        setStats(prev => ({
           activeDevices: json.stats?.active_devices ?? 33,
-          totalData: json.stats?.total_scans ?? 0,
-          alerts: json.stats?.anomalies ?? 0,
+          totalData: Math.max(Number(prev.totalData || 0), Number(json.stats?.total_scans ?? 0)),
+          alerts: Math.max(Number(prev.alerts || 0), Number(json.stats?.anomalies ?? 0)),
           uptime: json.stats?.uptime ?? 99.9,
-        });
+        }));
         const history = json.recent_data ?? [];
         setRecentData(history.length > 0
           ? history.map((rec, i) => {
@@ -364,7 +365,6 @@ const DashboardPage = () => {
         </div>
 
         {/* ── Live Sensor Updates ── */}
-        {!streamConnected && <p className="loading-text">Connecting to live updates...</p>}
         <LiveChart onConnect={() => setStreamConnected(true)} onData={handleLiveTelemetry} initialData={recentData} />
 
         {/* ── Recent Sensor Readings ── */}
