@@ -1,14 +1,15 @@
 import { useEffect, useState, useCallback } from 'react';
 import Layout from '../components/layout/Layout';
-import { authenticatedFetch } from '../utils/api';
+import { authenticatedFetch, getRefreshIntervalMs, formatUtcTimestamp } from '../utils/api';
 import './FraudReport.css';
 
 export default function FraudReport() {
-  const [alerts, setAlerts]         = useState([]);
-  const [loading, setLoading]       = useState(true);
-  const [error, setError]           = useState(null);
-  const [filter, setFilter]         = useState('all');
-  const [resolved, setResolved]     = useState(new Set());
+  const [alerts, setAlerts] = useState([]);
+  const [summaryStats, setSummaryStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [filter, setFilter] = useState('all');
+  const [resolved, setResolved] = useState(new Set());
   const [selectedAlert, setSelected] = useState(null);
 
   const fetchAlerts = useCallback(async (isInitial = false) => {
@@ -20,9 +21,12 @@ export default function FraudReport() {
       const alertsData = Array.isArray(data) ? data : (data.alerts || []);
       const alertList = Array.isArray(alertsData) ? alertsData : [];
       setAlerts(alertList);
+      if (data.stats) {
+        setSummaryStats(data.stats);
+      }
       setResolved(new Set(alertList.filter(a => a.resolved).map(a => a.id)));
       setError(null);
-    } catch (err) {
+    } catch {
       setError('Could not load fraud alerts. Is the backend running?');
     } finally {
       setLoading(false);
@@ -31,13 +35,21 @@ export default function FraudReport() {
 
   useEffect(() => {
     fetchAlerts(true);
-    const interval = setInterval(() => fetchAlerts(false), 6000);
+    const intervalMs = getRefreshIntervalMs(6000);
+    if (!intervalMs) return undefined;
+    const interval = setInterval(() => fetchAlerts(false), intervalMs);
     return () => clearInterval(interval);
   }, [fetchAlerts]);
 
   const handleResolveAlert = async (alertId) => {
     try {
-      await authenticatedFetch(`/api/fraud-alerts/${alertId}/resolve`, { method: 'POST' });
+      const res = await authenticatedFetch(`/api/fraud-alerts/${alertId}/resolve`, { method: 'POST' });
+      if (res && res.ok) {
+        const json = await res.json();
+        if (json.stats) {
+          setSummaryStats(json.stats);
+        }
+      }
     } catch (err) {
       console.warn('[Fraud] Could not persist alert resolution:', err);
     }
@@ -71,10 +83,10 @@ export default function FraudReport() {
   const getTypeBadge = (type) => {
     const t = type?.toLowerCase() || '';
     let badgeClass = 'badge-normal';
-    let label = type?.replace(/_/g, ' ') || 'Anomaly';
-    if (t.includes('anomaly') || t.includes('cluster')) badgeClass = 'badge-danger';
+    const label = type?.replace(/_/g, ' ') || 'Anomaly Excursion';
+    if (t.includes('anomaly') || t.includes('cluster') || t.includes('excursion')) badgeClass = 'badge-danger';
     else if (t.includes('intrusion') || t.includes('tamper') || t.includes('frequency')) badgeClass = 'badge-warning';
-    
+
     return (
       <span className={`status-badge ${badgeClass}`}>
         {label}
@@ -84,17 +96,19 @@ export default function FraudReport() {
 
   const filtered = alerts.filter(a => {
     const ratio = getConfidenceRatio(a.confidence);
-    if (filter === 'resolved')   return resolved.has(a.id);
-    if (filter === 'pending')    return !resolved.has(a.id);
-    if (filter === 'high')       return ratio > 0.8;
-    if (filter === 'medium')     return ratio > 0.6 && ratio <= 0.8;
-    if (filter === 'low')        return ratio <= 0.6;
+    if (filter === 'resolved') return resolved.has(a.id);
+    if (filter === 'pending') return !resolved.has(a.id);
+    if (filter === 'high') return ratio > 0.8;
+    if (filter === 'medium') return ratio > 0.6 && ratio <= 0.8;
+    if (filter === 'low') return ratio <= 0.6;
     return true;
   });
 
-  const criticalCount  = alerts.filter(a => getConfidenceRatio(a.confidence) > 0.8).length;
-  const resolvedCount  = resolved.size;
-  const pendingCount   = alerts.length - resolvedCount;
+  // Use canonical MongoDB counts so Fraud Alerts matches Dashboard, AI Analysis, and History 100%
+  const totalAlertsCount = summaryStats?.total_alerts ?? alerts.length;
+  const criticalCount = summaryStats?.critical_alerts ?? alerts.filter(a => getConfidenceRatio(a.confidence) > 0.8).length;
+  const resolvedCount = summaryStats?.resolved_alerts ?? resolved.size;
+  const pendingCount = summaryStats?.pending_alerts ?? Math.max(0, totalAlertsCount - resolvedCount);
 
   return (
     <Layout>
@@ -103,12 +117,12 @@ export default function FraudReport() {
         {/* Header */}
         <div className="fraud-header">
           <div>
-            <h1 className="fraud-title">Fraud Alerts</h1>
-            <p className="fraud-subtitle">Real-time AI-detected systemic fraud patterns</p>
-            {alerts.length > 0 && (
+            <h1 className="fraud-title">Fraud &amp; Anomaly Alerts</h1>
+            <p className="fraud-subtitle">Real-time AI-detected sensor excursions &amp; tampering patterns synced with MongoDB</p>
+            {totalAlertsCount > 0 && (
               <div className="fraud-alert-badge">
                 <span className="fraud-alert-dot" />
-                Live Monitoring ON
+                Live Monitoring ON ({totalAlertsCount.toLocaleString()} total in MongoDB)
               </div>
             )}
           </div>
@@ -120,22 +134,22 @@ export default function FraudReport() {
           </button>
         </div>
 
-        {/* ── Stats ── */}
+        {/* ── Stats (100% Connected to MongoDB Canonical Stats) ── */}
         <div className="fraud-stats">
           <div className="fraud-stat-card">
-            <div className="fraud-stat-num">{alerts.length}</div>
-            <div className="fraud-stat-lbl">Total Alerts</div>
+            <div className="fraud-stat-num">{Number(totalAlertsCount).toLocaleString()}</div>
+            <div className="fraud-stat-lbl">Total Alerts (MongoDB)</div>
           </div>
           <div className="fraud-stat-card">
-            <div className="fraud-stat-num" style={{ color: '#ef4444' }}>{criticalCount}</div>
-            <div className="fraud-stat-lbl">Critical Risk</div>
+            <div className="fraud-stat-num" style={{ color: '#ef4444' }}>{Number(criticalCount).toLocaleString()}</div>
+            <div className="fraud-stat-lbl">Critical / High Risk</div>
           </div>
           <div className="fraud-stat-card">
-            <div className="fraud-stat-num" style={{ color: '#f59e0b' }}>{pendingCount}</div>
-            <div className="fraud-stat-lbl">Pending</div>
+            <div className="fraud-stat-num" style={{ color: '#f59e0b' }}>{Number(pendingCount).toLocaleString()}</div>
+            <div className="fraud-stat-lbl">Pending Review</div>
           </div>
           <div className="fraud-stat-card">
-            <div className="fraud-stat-num" style={{ color: '#22c55e' }}>{resolvedCount}</div>
+            <div className="fraud-stat-num" style={{ color: '#22c55e' }}>{Number(resolvedCount).toLocaleString()}</div>
             <div className="fraud-stat-lbl">Resolved</div>
           </div>
         </div>
@@ -144,7 +158,7 @@ export default function FraudReport() {
         {loading && alerts.length === 0 ? (
           <div className="fraud-loading">
             <div className="fraud-spinner" />
-            <p>Scanning network for fraud...</p>
+            <p>Syncing anomaly alerts from MongoDB...</p>
           </div>
         ) : error ? (
           <div className="fraud-error"><p>Notice: {error}</p></div>
@@ -160,11 +174,11 @@ export default function FraudReport() {
             {/* ── Panel header + filter ── */}
             <div className="fraud-panel-header">
               <span className="fraud-panel-title">
-                Alert Log
-                <span className="fraud-panel-badge">{filtered.length} alerts</span>
+                Recent Alert Log
+                <span className="fraud-panel-badge">{filtered.length} shown</span>
               </span>
               <div className="fraud-filter-row">
-                {['all','high','medium','low','pending','resolved'].map(f => (
+                {['all', 'high', 'medium', 'low', 'pending', 'resolved'].map(f => (
                   <button
                     key={f}
                     className={`fraud-filter-btn ${filter === f ? 'active' : ''}`}
@@ -188,7 +202,7 @@ export default function FraudReport() {
                     <tr>
                       <th>Detection Type</th>
                       <th>Target Asset</th>
-                      <th>Confidence</th>
+                      <th>Dynamic Confidence</th>
                       <th>Time Detected</th>
                       <th>Severity</th>
                       <th>Actions</th>
@@ -196,8 +210,8 @@ export default function FraudReport() {
                   </thead>
                   <tbody>
                     {filtered.map((alert, i) => {
-                      const rawConf    = parseFloat(alert.confidence || 0);
-                      const confRatio  = rawConf > 1.0 ? rawConf / 100.0 : rawConf;
+                      const rawConf = parseFloat(alert.confidence || 0);
+                      const confRatio = rawConf > 1.0 ? rawConf / 100.0 : rawConf;
                       const confPercent = (confRatio * 100.0).toFixed(1);
                       const isResolved = resolved.has(alert.id);
                       return (
@@ -208,9 +222,7 @@ export default function FraudReport() {
                             ${isResolved ? 'row-resolved' : ''}
                           `}
                         >
-                          <td>
-                            {getTypeBadge(alert.type)}
-                          </td>
+                          <td>{getTypeBadge(alert.type)}</td>
                           <td>
                             <code className="asset-id">{alert.asset_id}</code>
                           </td>
@@ -230,11 +242,9 @@ export default function FraudReport() {
                               </span>
                             </div>
                           </td>
-                          <td className="timestamp">{alert.timestamp}</td>
+                          <td className="timestamp">{formatUtcTimestamp(alert.timestamp)}</td>
                           <td>
-                            <span
-                              className={`risk-badge risk-${getSeverity(confRatio)}`}
-                            >
+                            <span className={`risk-badge risk-${getSeverity(confRatio)}`}>
                               {getSeverity(confRatio).toUpperCase()}
                             </span>
                           </td>
@@ -305,7 +315,7 @@ export default function FraudReport() {
                     </div>
                     <div className="fraud-detail-item">
                       <span className="fraud-detail-label">Time Detected</span>
-                      <span className="fraud-detail-value">{selectedAlert.timestamp}</span>
+                      <span className="fraud-detail-value">{formatUtcTimestamp(selectedAlert.timestamp)}</span>
                     </div>
                     <div className="fraud-detail-item">
                       <span className="fraud-detail-label">Status</span>
@@ -316,14 +326,20 @@ export default function FraudReport() {
                   </div>
                 </div>
 
+                {selectedAlert.message && (
+                  <div className="fraud-modal-section">
+                    <div className="fraud-modal-section-title">Diagnostic Telemetry Message</div>
+                    <p>{selectedAlert.message}</p>
+                  </div>
+                )}
+
                 <div className="fraud-modal-section">
                   <div className="fraud-modal-section-title">Suggested Action</div>
                   <p>
-                    {getConfidenceRatio(selectedAlert.confidence) > 0.8
-                      ? 'Critical: Immediately isolate the affected node and alert the security team. Do not allow further transactions until investigation is complete.'
-                      : getConfidenceRatio(selectedAlert.confidence) > 0.6
-                      ? 'Warning: Monitor the node closely for the next 30 minutes. Schedule an inspection if activity continues.'
-                      : 'Notice: No immediate action needed. Continue monitoring. Flag for review in next routine check.'}
+                    {selectedAlert.recommendation ||
+                      (getConfidenceRatio(selectedAlert.confidence) > 0.8
+                        ? 'Critical: Immediately isolate the affected node and alert the maintenance team.'
+                        : 'Warning: Monitor the node closely for the next 30 minutes and schedule an inspection.')}
                   </p>
                 </div>
 
