@@ -14,7 +14,7 @@ load_dotenv()
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/") + "/api/process_data"
 API_KEY = os.getenv("DEPIN_API_KEY", "")
-STREAM_DELAY = float(os.getenv("STREAM_DELAY_SECONDS", "1.0"))
+STREAM_DELAY = float(os.getenv("STREAM_DELAY_SECONDS", "5.0"))
 CONTINUOUS_LOOP = os.getenv("CONTINUOUS_LOOP", "true").lower() in ("true", "1", "yes")
 
 if not API_KEY:
@@ -110,6 +110,8 @@ def load_industrial_datasets():
                             "temp": 22.5,
                             "vib": 0.25,
                             "pwr": 25.0,
+                            "currents": [],
+                            "voltages": [],
                             "fault_type": "none",
                             "is_anom": 0,
                         }
@@ -125,6 +127,10 @@ def load_industrial_datasets():
                         timestamps[ts]["vib"] = round(val, 2)
                     elif sensor == "Energy_Consumption":
                         timestamps[ts]["pwr"] = round(val * 10.0, 2)
+                    elif sensor in ("Current_1", "Current_2", "Current_3"):
+                        timestamps[ts]["currents"].append(val)
+                    elif sensor in ("Phase_1_Voltage", "Phase_2_Voltage", "Phase_3_Voltage"):
+                        timestamps[ts]["voltages"].append(val)
 
                     row_fault = row.get("fault_type", "").strip()
                     if row_fault and row_fault != "none":
@@ -157,14 +163,19 @@ def load_industrial_datasets():
     for idx, (ts, vals) in enumerate(timestamps.items()):
         plc = plc_rows[idx] if idx < len(plc_rows) else {"pressure": 0.0, "valve_status": "NORMAL", "emergency_stop": False}
         fault = "emergency_stop" if plc["emergency_stop"] else vals["fault_type"]
+        cur_avg = round(sum(vals["currents"]) / len(vals["currents"]), 2) if vals["currents"] else 0.12
+        volt_avg = round(sum(vals["voltages"]) / len(vals["voltages"]), 2) if vals["voltages"] else 217.5
         records.append({
             "temperature": vals["temp"],
             "vibration": vals["vib"],
             "power_usage": vals["pwr"],
+            "current_avg": cur_avg,
+            "voltage_avg": volt_avg,
             "pressure": plc["pressure"],
             "valve_status": plc["valve_status"],
             "emergency_stop": plc["emergency_stop"],
             "fault_type": fault,
+            "is_anomaly": 1 if (vals["is_anom"] or plc["emergency_stop"]) else 0,
         })
 
     if not records:
@@ -189,9 +200,8 @@ def stream_data(max_records: int = None):
     error_count = 0
     device_idx = 0
 
-    # Maintain chronological time series offsets for each device to preserve temporal continuity
-    stride = max(1, len(records) // len(DEVICES))
-    device_offsets = {dev: (i * stride) % len(records) for i, dev in enumerate(DEVICES)}
+    # Start near real anomaly clusters (around record 280) so anomalies appear early in monitoring
+    device_offsets = {dev: (280 + i * 2) % len(records) for i, dev in enumerate(DEVICES)}
 
     headers = {
         "X-API-Key": API_KEY,
@@ -228,6 +238,8 @@ def stream_data(max_records: int = None):
                 "vibration": rec["vibration"],
                 "power_usage": rec["power_usage"],
                 "pressure": rec["pressure"],
+                "current_avg": rec.get("current_avg", 0.12),
+                "voltage_avg": rec.get("voltage_avg", 217.5),
                 "timestamp": timestamp_utc,
                 "machine_name": meta["machine_name"],
                 "alert_level": meta["alert_level"],
