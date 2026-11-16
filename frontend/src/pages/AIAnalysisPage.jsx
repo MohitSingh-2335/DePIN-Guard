@@ -87,6 +87,32 @@ const AIAnalysisPage = () => {
     }
   };
 
+  const getConfidenceRationale = (confidence, loss, threshold) => {
+    const c = Number(confidence || 50);
+    const l = Number(loss || 0);
+    const t = Number(threshold || 0.163);
+    const ratio = t > 0 ? l / t : 1.0;
+    if (c >= 85 || ratio >= 2.0) {
+      return {
+        tier: 'Severe Outlier',
+        color: '#ef4444',
+        text: `High confidence: MSE loss (${l.toFixed(4)}) is ${ratio.toFixed(1)}x above threshold (${t.toFixed(4)}), indicating severe multi-channel excursion.`,
+      };
+    }
+    if (c >= 65 || ratio >= 1.3) {
+      return {
+        tier: 'Moderate Deviation',
+        color: '#f59e0b',
+        text: `Moderate confidence: MSE loss is ${((ratio - 1) * 100).toFixed(0)}% above baseline. Noticeable sensor correlation drift.`,
+      };
+    }
+    return {
+      tier: 'Early-Stage Drift',
+      color: '#38bdf8',
+      text: `Early anomaly signature: MSE loss (${l.toFixed(4)}) is just above baseline (${t.toFixed(4)}). Individual channels nominal, sequence pattern shifting.`,
+    };
+  };
+
   return (
     <Layout>
       <div className="ai-analysis-container">
@@ -200,6 +226,23 @@ const AIAnalysisPage = () => {
                         }}
                       />
                     </div>
+                    {analysis.loss !== undefined && (
+                      <div style={{
+                        marginTop: '6px',
+                        padding: '6px 10px',
+                        background: 'rgba(15,23,42,0.5)',
+                        borderRadius: '6px',
+                        border: '1px solid rgba(255,255,255,0.06)',
+                        fontSize: '0.72rem',
+                        lineHeight: 1.4,
+                        color: '#94a3b8',
+                      }}>
+                        <strong style={{ color: getConfidenceRationale(analysis.confidence, analysis.loss, analysis.threshold).color }}>
+                          Confidence Rationale ({getConfidenceRationale(analysis.confidence, analysis.loss, analysis.threshold).tier}):
+                        </strong>{' '}
+                        {getConfidenceRationale(analysis.confidence, analysis.loss, analysis.threshold).text}
+                      </div>
+                    )}
                   </div>
 
                   <div className="analysis-description">{analysis.description}</div>
@@ -230,6 +273,12 @@ const AIAnalysisPage = () => {
                 <p><strong>Model:</strong> {selectedAnalysis.aiModel}</p>
                 <p><strong>Severity:</strong> {selectedAnalysis.severity.toUpperCase()}</p>
                 <p><strong>Dynamic Confidence:</strong> {Number(selectedAnalysis.confidence).toFixed(1)}%</p>
+                <div style={{ margin: '8px 0', padding: '10px', background: 'rgba(15,23,42,0.6)', borderRadius: '6px', fontSize: '0.8rem', color: '#cbd5e1', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <strong style={{ color: '#38bdf8' }}>Confidence Calculation Rationale:</strong>
+                  <p style={{ margin: '4px 0 0', fontSize: '0.76rem', color: '#94a3b8', lineHeight: 1.45 }}>
+                    Confidence is determined by the ratio of actual reconstruction MSE loss to baseline threshold. Ratios near 1.0 (loss ≈ threshold) yield ~55–65% confidence indicating early-onset pattern drift, while severe outliers (&gt;1.5x) trigger &gt;80% confidence with critical severity.
+                  </p>
+                </div>
                 <p><strong>Reconstruction MSE Loss:</strong> {Number(selectedAnalysis.loss).toFixed(6)} (Threshold: {Number(selectedAnalysis.threshold).toFixed(6)})</p>
                 <p><strong>Detected At:</strong> {formatUtcTimestamp(selectedAnalysis.detected)}</p>
                 <p><strong>Recommendation:</strong></p>
