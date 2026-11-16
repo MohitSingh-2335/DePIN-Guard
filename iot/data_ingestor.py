@@ -64,10 +64,10 @@ def format_status(device_id: str, temp: float, vib: float, power: float, pressur
     machine_name = MACHINE_NAMES.get(device_id, "Industrial Machine")
 
     # Dynamic operating bounds grounded in real sensor_data.csv / plc dataset distributions
-    is_temp_anom = temp < 20.8 or temp > 25.0
-    is_vib_anom = vib > 3.1
-    is_power_anom = power > 48.5
-    is_press_anom = pressure > 165.0 or (pressure < 20.0 and pressure > 0)
+    is_temp_anom = temp < 20.5 or temp > 25.0
+    is_vib_anom = vib > 3.10
+    is_power_anom = power > 4.90
+    is_press_anom = pressure > 185.0 or (pressure < 30.0 and pressure > 0)
     is_fault = (fault_type and fault_type != "none") or (fault_type == "emergency_stop")
 
     concerns = sum([is_temp_anom, is_vib_anom, is_power_anom, is_press_anom, is_fault])
@@ -92,29 +92,41 @@ def format_status(device_id: str, temp: float, vib: float, power: float, pressur
     }
 
 
-def load_industrial_datasets():
+def load_industrial_datasets(start_ts_offset: int = 275, max_timestamps: int = 1200):
     path_sensors = find_data_file("sensor_data.csv")
     path_plc = find_data_file("plc_industrial_control_dataset (1).csv")
 
     timestamps = {}
+    seen_ts_order = []
+
     if os.path.exists(path_sensors):
         try:
             with open(path_sensors, "r", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
+                current_ts = None
+                ts_idx = -1
                 for row in reader:
                     ts = row.get("timestamp", "")
-                    if not ts:
+                    if ts != current_ts:
+                        current_ts = ts
+                        ts_idx += 1
+                        if ts_idx >= start_ts_offset + max_timestamps:
+                            break
+                    if ts_idx < start_ts_offset:
                         continue
+
                     if ts not in timestamps:
                         timestamps[ts] = {
                             "temp": 22.5,
                             "vib": 0.25,
-                            "pwr": 25.0,
+                            "pwr": 2.5,
                             "currents": [],
                             "voltages": [],
                             "fault_type": "none",
                             "is_anom": 0,
                         }
+                        seen_ts_order.append(ts)
+
                     sensor = row.get("sensor", "")
                     try:
                         val = float(row.get("value", 0.0))
@@ -126,7 +138,7 @@ def load_industrial_datasets():
                     elif sensor == "Vibration":
                         timestamps[ts]["vib"] = round(val, 2)
                     elif sensor == "Energy_Consumption":
-                        timestamps[ts]["pwr"] = round(val * 10.0, 2)
+                        timestamps[ts]["pwr"] = round(val, 2)
                     elif sensor in ("Current_1", "Current_2", "Current_3"):
                         timestamps[ts]["currents"].append(val)
                     elif sensor in ("Phase_1_Voltage", "Phase_2_Voltage", "Phase_3_Voltage"):
@@ -146,7 +158,11 @@ def load_industrial_datasets():
         try:
             with open(path_plc, "r", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
-                for row in reader:
+                for idx, row in enumerate(reader):
+                    if idx < start_ts_offset:
+                        continue
+                    if len(plc_rows) >= max_timestamps:
+                        break
                     try:
                         p = round(float(row.get("hydraulic_pressure", 0.0)), 2)
                     except (ValueError, TypeError):
@@ -160,7 +176,8 @@ def load_industrial_datasets():
             print(f"[DatasetLoader] Notice loading PLC ({exc})")
 
     records = []
-    for idx, (ts, vals) in enumerate(timestamps.items()):
+    for idx, ts in enumerate(seen_ts_order):
+        vals = timestamps[ts]
         plc = plc_rows[idx] if idx < len(plc_rows) else {"pressure": 0.0, "valve_status": "NORMAL", "emergency_stop": False}
         fault = "emergency_stop" if plc["emergency_stop"] else vals["fault_type"]
         cur_avg = round(sum(vals["currents"]) / len(vals["currents"]), 2) if vals["currents"] else 0.12
@@ -181,7 +198,7 @@ def load_industrial_datasets():
     if not records:
         raise RuntimeError("No records loaded from industrial datasets. Verify data files exist in data/.")
 
-    print(f"[DatasetLoader] Successfully loaded {len(records)} fused industrial records.")
+    print(f"[DatasetLoader] Successfully loaded {len(records)} fused industrial records (offset={start_ts_offset}).")
     return records
 
 
@@ -200,8 +217,8 @@ def stream_data(max_records: int = None):
     error_count = 0
     device_idx = 0
 
-    # Start near real anomaly clusters (around record 280) so anomalies appear early in monitoring
-    device_offsets = {dev: (280 + i * 2) % len(records) for i, dev in enumerate(DEVICES)}
+    # Start at beginning of fused anomaly slice
+    device_offsets = {dev: (i * 2) % len(records) for i, dev in enumerate(DEVICES)}
 
     headers = {
         "X-API-Key": API_KEY,
