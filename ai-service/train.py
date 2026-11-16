@@ -19,13 +19,13 @@ THRESHOLD_PATH = os.path.join(os.path.dirname(__file__), "threshold.txt")
 METRICS_PATH = os.path.join(os.path.dirname(__file__), "metrics.json")
 
 SEQ_LENGTH = 30
-FEATURES = 4
+FEATURES = 6
 EPOCHS = 30
 LR = 0.001
 
 
 class LSTMAutoencoder(nn.Module):
-    def __init__(self, input_dim: int = 4, hidden_dim: int = 64):
+    def __init__(self, input_dim: int = 6, hidden_dim: int = 64):
         super().__init__()
         self.encoder = nn.LSTM(input_dim, hidden_dim, batch_first=True)
         self.decoder = nn.LSTM(hidden_dim, input_dim, batch_first=True)
@@ -50,12 +50,23 @@ def load_dataset():
     print(f"Loading PLC dataset: {DATA_PLC}")
     df_plc = pd.read_csv(DATA_PLC, nrows=len(pivoted))
 
+    current_cols = [c for c in ["Current_1", "Current_2", "Current_3"] if c in pivoted.columns]
+    current_avg = pivoted[current_cols].mean(axis=1).round(3) if current_cols else pd.Series(0.12, index=pivoted.index)
+
+    voltage_cols = [c for c in ["Phase_1_Voltage", "Phase_2_Voltage", "Phase_3_Voltage"] if c in pivoted.columns]
+    voltage_avg = pivoted[voltage_cols].mean(axis=1).round(2) if voltage_cols else pd.Series(217.5, index=pivoted.index)
+
+    emergency_stop = df_plc["emergency_stop"].astype(bool) if "emergency_stop" in df_plc.columns else pd.Series(False, index=pivoted.index)
+    combined_anomaly = (pivoted["is_anomaly"] == 1) | emergency_stop
+
     fused = pd.DataFrame({
         "temperature": pivoted["Temperature"].round(2),
         "vibration": pivoted["Vibration"].round(2),
         "power_usage": (pivoted["Energy_Consumption"] * 10.0).round(2),
+        "current_avg": current_avg,
+        "voltage_avg": voltage_avg,
         "pressure": df_plc["hydraulic_pressure"].round(2),
-        "is_anomaly": pivoted["is_anomaly"]
+        "is_anomaly": combined_anomaly.astype(int)
     })
 
     return fused
@@ -63,7 +74,7 @@ def load_dataset():
 
 def train():
     fused_df = load_dataset()
-    feature_cols = ["temperature", "vibration", "power_usage", "pressure"]
+    feature_cols = ["temperature", "vibration", "power_usage", "current_avg", "voltage_avg", "pressure"]
 
     # Split train (80%) and held-out validation (20%)
     split_idx = int(len(fused_df) * 0.8)
@@ -77,7 +88,7 @@ def train():
     scaler = MinMaxScaler()
     scaled_train = scaler.fit_transform(normal_train.values)
     joblib.dump(scaler, SCALER_PATH)
-    print(f"Saved 4-feature scaler to: {SCALER_PATH}")
+    print(f"Saved 6-feature scaler to: {SCALER_PATH}")
     print(f"Scaler min: {scaler.data_min_} | max: {scaler.data_max_}")
 
     # Build temporal sliding sequences
@@ -106,11 +117,11 @@ def train():
     duration = time.time() - start_time
     print(f"Training completed in {duration:.2f} seconds.")
 
-    # Calculate 95th percentile reconstruction threshold on training sequences
+    # Calculate 95th percentile reconstruction threshold on training sequences (final timestep)
     model.eval()
     with torch.no_grad():
         reconstructions = model(X_train)
-        errors = torch.mean((X_train - reconstructions) ** 2, dim=(1, 2)).numpy()
+        errors = torch.mean((X_train[:, -1, :] - reconstructions[:, -1, :]) ** 2, dim=1).numpy()
 
     threshold = float(np.percentile(errors, 95))
     with open(THRESHOLD_PATH, "w", encoding="utf-8") as f:
@@ -128,9 +139,13 @@ def train():
     X_val = torch.tensor(np.array(val_sequences), dtype=torch.float32)
     with torch.no_grad():
         val_recon = model(X_val)
-        val_errors = torch.mean((X_val - val_recon) ** 2, dim=(1, 2)).numpy()
+        val_errors = torch.mean((X_val[:, -1, :] - val_recon[:, -1, :]) ** 2, dim=1).numpy()
 
-    val_preds = (val_errors > threshold).astype(int)
+    val_last_steps = scaled_val[SEQ_LENGTH - 1 :]
+    max_devs = np.max(np.maximum(0.0, np.maximum(-val_last_steps, val_last_steps - 1.0)), axis=1)
+    combined_val_errors = val_errors + (max_devs * threshold * 2.0)
+
+    val_preds = (combined_val_errors > threshold).astype(int)
     val_labels = np.array(val_labels)
 
     acc = float(accuracy_score(val_labels, val_preds))
@@ -142,7 +157,6 @@ def train():
     print(f"  Recall:    {rec * 100:.2f}%")
     print(f"  F1-Score:  {f1 * 100:.2f}%")
 
-    # Load existing metrics or create new
     metrics = {}
     if os.path.exists(METRICS_PATH):
         try:
@@ -152,7 +166,7 @@ def train():
             metrics = {}
 
     metrics.update({
-        "model_name": "PyTorch 4-Channel Temporal LSTM Autoencoder",
+        "model_name": "PyTorch 6-Channel Temporal LSTM Autoencoder",
         "threshold": round(threshold, 6),
         "accuracy": round(acc * 100, 2),
         "lstm_accuracy": round(acc * 100, 2),
