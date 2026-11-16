@@ -235,9 +235,9 @@ export default function LiveChart({ onConnect, onData, initialData = [] }) {
             <span className={`scada-live-pill ${streamMode}`}>
               <span className="live-radar-dot" />
               {streamMode === 'ws'
-                ? 'WebSocket Live (2.0s)'
+                ? 'WebSocket Live (5.0s)'
                 : streamMode === 'http'
-                ? 'HTTP Auto-Stream (2.5s)'
+                ? 'HTTP Auto-Stream (5.0s)'
                 : 'Connecting Pipeline...'}
             </span>
           </div>
