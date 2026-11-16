@@ -19,6 +19,9 @@ const PREVIEW_COUNT = 5;
 const getWsUrl = () => {
   const apiUrl = (import.meta.env.VITE_API_URL || '').trim().replace(/\/$/, '');
   if (!apiUrl) {
+    if (typeof window !== 'undefined' && window.location.hostname && !window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1')) {
+      return 'wss://depin-guard-backend-nsvs.onrender.com/ws/live';
+    }
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${proto}//${window.location.host}/ws/live`;
   }
