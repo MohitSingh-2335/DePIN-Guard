@@ -80,6 +80,8 @@ async def create_indexes():
 
 class SensorDataModel(BaseModel):
     device_id: str
+    machine_name: str = ""
+    status_short: str = ""
     temperature: float
     vibration: float
     power_usage: float
