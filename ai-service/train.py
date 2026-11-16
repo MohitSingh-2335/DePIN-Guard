@@ -62,7 +62,7 @@ def load_dataset():
     fused = pd.DataFrame({
         "temperature": pivoted["Temperature"].round(2),
         "vibration": pivoted["Vibration"].round(2),
-        "power_usage": (pivoted["Energy_Consumption"] * 10.0).round(2),
+        "power_usage": pivoted["Energy_Consumption"].round(2),
         "current_avg": current_avg,
         "voltage_avg": voltage_avg,
         "pressure": df_plc["hydraulic_pressure"].round(2),
