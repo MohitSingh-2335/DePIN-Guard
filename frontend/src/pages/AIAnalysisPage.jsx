@@ -3,6 +3,30 @@ import Layout from '../components/layout/Layout';
 import { authenticatedFetch } from '../utils/api';
 import './AIAnalysisPage.css';
 
+const formatTimestamp = (timestamp) => {
+  if (!timestamp) return 'N/A';
+  try {
+    let s = String(timestamp).trim();
+    if (s.includes(' ') && !s.includes('+') && !s.endsWith('Z')) {
+      s = s.replace(' ', 'T') + 'Z';
+    } else if (!s.includes('T') && !s.includes('+') && !s.endsWith('Z')) {
+      s += 'Z';
+    }
+    const d = new Date(s);
+    if (isNaN(d.getTime())) return String(timestamp);
+    return d.toLocaleString(undefined, {
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    });
+  } catch {
+    return String(timestamp);
+  }
+};
+
 const AIAnalysisPage = () => {
   const [analysisResults, setAnalysisResults] = useState([]);
   const [aiStats, setAiStats] = useState({
@@ -19,11 +43,7 @@ const AIAnalysisPage = () => {
   const fetchAIData = async () => {
     try {
       const res = await authenticatedFetch('/api/ai-analysis');
-      if (!res) {
-        return;
-      }
-      
-      if (!res.ok) {
+      if (!res || !res.ok) {
         return;
       }
 
@@ -55,10 +75,12 @@ const AIAnalysisPage = () => {
               type:           rec.analysis_type  ?? 'N/A',
               severity:       rec.severity       ?? 'low',
               confidence:     Math.min(100, Math.max(0, rec.confidence ?? 0)),
-              detected:       rec.timestamp      ?? new Date().toLocaleTimeString(),
+              loss:           rec.loss           ?? 0.0,
+              threshold:      rec.threshold      ?? 0.163,
+              detected:       rec.timestamp      ?? new Date().toISOString(),
               description:    rec.description    ?? 'No description',
               recommendation: rec.recommendation ?? 'No recommendation',
-              aiModel:        rec.model_name     ?? 'N/A',
+              aiModel:        rec.model_name     ?? 'PyTorch 6-Channel Temporal LSTM Autoencoder',
             }));
 
           return [...newResults, ...prev].slice(0, 50);
@@ -84,8 +106,11 @@ const AIAnalysisPage = () => {
   const getSeverityColor = (severity) => {
     const s = severity.toLowerCase();
     switch (s) {
+      case 'critical':
       case 'high':   return { bg: '#ef444420', text: '#ef4444' };
+      case 'warning':
       case 'medium': return { bg: '#f59e0b20', text: '#f59e0b' };
+      case 'normal':
       case 'low':    return { bg: '#22c55e20', text: '#22c55e' };
       default:       return { bg: '#6b728020', text: '#6b7280' };
     }
@@ -151,7 +176,6 @@ const AIAnalysisPage = () => {
             <div className="analysis-list">
               {filteredResults.map((analysis) => (
                 <div key={analysis.id} className="analysis-card">
-                  {/* Card content remains same but uses 'analysis' properties mapped from backend */}
                   <div className="analysis-header">
                     <div className="analysis-device">
                       <div className="device-icon-ai">
@@ -178,14 +202,25 @@ const AIAnalysisPage = () => {
                   <div className="confidence-bar-container">
                     <div className="confidence-label">
                       <span>Confidence</span>
-                      <span className="confidence-value">{analysis.confidence}%</span>
+                      <span className="confidence-value">
+                        {analysis.confidence}% {analysis.loss !== undefined && (
+                          <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 500, marginLeft: '6px' }}>
+                            (Loss: {Number(analysis.loss).toFixed(4)} | Thresh: {Number(analysis.threshold).toFixed(4)})
+                          </span>
+                        )}
+                      </span>
                     </div>
                     <div className="confidence-bar">
                       <div
                         className="confidence-fill"
                         style={{
                           width: `${analysis.confidence}%`,
-                          background: analysis.confidence > 80 ? '#22c55e' : analysis.confidence > 60 ? '#f59e0b' : '#ef4444',
+                          background:
+                            analysis.severity === 'critical' || analysis.severity === 'high'
+                              ? '#ef4444'
+                              : analysis.severity === 'medium' || analysis.severity === 'warning'
+                              ? '#f59e0b'
+                              : '#10b981',
                         }}
                       />
                     </div>
@@ -193,7 +228,7 @@ const AIAnalysisPage = () => {
 
                   <div className="analysis-description">{analysis.description}</div>
                   <div className="analysis-meta">
-                    <div className="meta-item">{analysis.detected}</div>
+                    <div className="meta-item">{formatTimestamp(analysis.detected)}</div>
                     <div className="meta-item">{analysis.aiModel}</div>
                   </div>
 
@@ -206,17 +241,20 @@ const AIAnalysisPage = () => {
           )}
         </div>
 
-        {/* Modal Logic remains same but uses 'selectedAnalysis' object */}
+        {/* Modal Logic */}
         {selectedAnalysis && (
            <div className="modal-overlay" onClick={() => setSelectedAnalysis(null)}>
              <div className="modal-content-ai" onClick={e => e.stopPropagation()}>
-               {/* Modal details mapping from backend data */}
                <div className="modal-header-ai">
                   <h2>Analysis Details</h2>
                   <button onClick={() => setSelectedAnalysis(null)}>×</button>
                </div>
                <div className="modal-body-ai">
+                  <p><strong>Device:</strong> {selectedAnalysis.device}</p>
                   <p><strong>Model:</strong> {selectedAnalysis.aiModel}</p>
+                  <p><strong>Severity:</strong> {selectedAnalysis.severity.toUpperCase()}</p>
+                  <p><strong>Confidence:</strong> {selectedAnalysis.confidence}%</p>
+                  <p><strong>Reconstruction Loss:</strong> {Number(selectedAnalysis.loss).toFixed(6)} (Threshold: {Number(selectedAnalysis.threshold).toFixed(6)})</p>
                   <p><strong>Recommendation:</strong></p>
                   <div className="recommendation-box">{selectedAnalysis.recommendation}</div>
                </div>
