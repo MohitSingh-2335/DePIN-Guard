@@ -104,7 +104,7 @@ class AnomalyDetector:
         over_max = np.maximum(0.0, scaled_reading - 1.0)
         under_min = np.maximum(0.0, 0.0 - scaled_reading)
         bound_dev = float(np.max(np.maximum(over_max, under_min)))
-        loss = round(step_loss + (bound_dev * self.threshold * 1.5), 6)
+        loss = round(step_loss + (bound_dev * 1.0), 6)
         is_anomaly = bool(loss > self.threshold)
 
         ratio = loss / max(self.threshold, 1e-6)
