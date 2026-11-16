@@ -332,11 +332,6 @@ export default function FraudReport() {
           </div>
         )}
 
-              </div>
-            </div>
-          </div>
-        )}
-
       </div>
     </Layout>
   );
