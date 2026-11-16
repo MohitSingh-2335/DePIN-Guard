@@ -816,28 +816,24 @@
   margin-bottom: 2rem;
 }
 
-.history-stats-grid .stat-card,
-.stat-card {
+.history-stats-grid .stat-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 1.25rem 1.5rem;
   display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
   transition: var(--transition);
 }
 
-.history-stats-grid .stat-card {
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.stat-card:hover {
+.history-stats-grid .stat-card:hover {
   border-color: var(--border-hover);
   background: var(--bg-hover);
   transform: translateY(-2px);
 }
 
-.stat-label {
+.history-stats-grid .stat-label {
   font-size: 0.78rem;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -845,7 +841,7 @@
   font-weight: 600;
 }
 
-.stat-value {
+.history-stats-grid .stat-value {
   font-size: 1.75rem;
   font-weight: 800;
   color: var(--text-primary);
