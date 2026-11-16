@@ -10,7 +10,7 @@ import {
   ReferenceLine,
   CartesianGrid,
 } from 'recharts';
-import { authenticatedFetch } from '../utils/api';
+import { authenticatedFetch, formatUtcTimestamp } from '../utils/api';
 import './LiveChart.css';
 
 const MAX_POINTS = 20;
@@ -19,7 +19,12 @@ const PREVIEW_COUNT = 5;
 const getWsUrl = () => {
   const apiUrl = (import.meta.env.VITE_API_URL || '').trim().replace(/\/$/, '');
   if (!apiUrl) {
-    if (typeof window !== 'undefined' && window.location.hostname && !window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1')) {
+    if (
+      typeof window !== 'undefined' &&
+      window.location.hostname &&
+      !window.location.hostname.includes('localhost') &&
+      !window.location.hostname.includes('127.0.0.1')
+    ) {
       return 'wss://depin-guard-backend-nsvs.onrender.com/ws/live';
     }
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -43,9 +48,13 @@ const CustomStreamTooltip = ({ active, payload }) => {
       </div>
       <div className="tooltip-body">
         <div><strong>Machine:</strong> {item.machine_name || item.device_id}</div>
-        <div><strong>Temperature:</strong> {Number(item.temperature || 0).toFixed(1)} °C</div>
+        <div><strong>Temperature:</strong> {Number(item.temperature || 0).toFixed(2)} °C</div>
         <div><strong>Vibration:</strong> {Number(item.vibration || 0).toFixed(2)} mm/s</div>
-        <div><strong>Power Usage:</strong> {Number(item.power_usage || 0).toFixed(1)} W</div>
+        <div><strong>Power Usage:</strong> {Number(item.power_usage || 0).toFixed(2)} kW</div>
+        <div><strong>Pressure:</strong> {Number(item.pressure || 0).toFixed(1)} bar</div>
+        {item.loss !== undefined && (
+          <div><strong>AI Loss / Conf:</strong> {Number(item.loss).toFixed(4)} ({Number(item.confidence || 85).toFixed(1)}%)</div>
+        )}
         <div><strong>Timestamp:</strong> {item.time_label || 'Live'}</div>
       </div>
     </div>
@@ -54,78 +63,97 @@ const CustomStreamTooltip = ({ active, payload }) => {
 
 export default function LiveChart({ onConnect, onData, initialData = [] }) {
   const [data, setData] = useState([]);
-  const [streamMode, setStreamMode] = useState('connecting'); // 'ws' | 'http' | 'connecting'
+  const [streamMode, setStreamMode] = useState('connecting');
   const [expanded, setExpanded] = useState(false);
-  const [chartMetric, setChartMetric] = useState('temp'); // 'temp' | 'vib' | 'dual'
+  const [chartMetric, setChartMetric] = useState('temp');
   const [packetCount, setPacketCount] = useState(0);
 
   const wsRef = useRef(null);
   const lastPacketTimeRef = useRef(0);
+  const lastSeenKeyRef = useRef('');
   const retryTimeoutRef = useRef(null);
   const pollIntervalRef = useRef(null);
   const isComponentMounted = useRef(true);
 
-  // Ingestion handler: updates internal state and notifies parent
+  // Store parent callbacks in refs so WebSocket and poll effects never reconnect on parent re-renders
+  const onConnectRef = useRef(onConnect);
+  const onDataRef = useRef(onData);
+  useEffect(() => {
+    onConnectRef.current = onConnect;
+    onDataRef.current = onData;
+  }, [onConnect, onData]);
+
   const ingestTelemetry = useCallback((rawItem) => {
     if (!rawItem || typeof rawItem !== 'object') return;
+
+    const devId = rawItem.device_id || rawItem.device || 'Node-Edge';
+    const rawTs = rawItem.timestamp || '';
+    const uniqueKey = String(rawItem.id || `${devId}:${rawTs}:${rawItem.temperature ?? rawItem.temp}`);
+    if (uniqueKey && lastSeenKeyRef.current === uniqueKey) {
+      return;
+    }
+    lastSeenKeyRef.current = uniqueKey;
     lastPacketTimeRef.current = Date.now();
 
-    const timestamp = rawItem.timestamp ? new Date(rawItem.timestamp) : new Date();
-    const timeLabel = !isNaN(timestamp.getTime())
-      ? timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    const timeLabel = rawTs
+      ? formatUtcTimestamp(rawTs, false)
       : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
     const normalized = {
-      device_id: rawItem.device_id || rawItem.device || 'Node-Edge',
-      machine_name: rawItem.machine_name || rawItem.device_id || rawItem.device || 'Industrial Machine',
-      temperature: Number(rawItem.temperature ?? rawItem.temp ?? rawItem.value ?? 22.0),
+      id: rawItem.id || uniqueKey,
+      device_id: devId,
+      machine_name: rawItem.machine_name || devId,
+      temperature: Number(rawItem.temperature ?? rawItem.temp ?? rawItem.value ?? 22.5),
       vibration: Number(rawItem.vibration ?? rawItem.vib ?? 0.25),
-      power_usage: Number(rawItem.power_usage ?? rawItem.pwr ?? 12.0),
-      pressure: Number(rawItem.pressure ?? 0),
+      power_usage: Number(rawItem.power_usage ?? rawItem.pwr ?? 2.5),
+      pressure: Number(rawItem.pressure ?? 100.0),
+      current_avg: Number(rawItem.current_avg ?? 0.12),
+      voltage_avg: Number(rawItem.voltage_avg ?? 217.5),
+      loss: rawItem.loss,
+      threshold: rawItem.threshold ?? 0.205,
+      confidence: rawItem.confidence,
       is_anomaly: Boolean(rawItem.is_anomaly || rawItem.status === 'critical' || rawItem.anomaly === 1),
       status: rawItem.status || (rawItem.is_anomaly ? 'critical' : 'normal'),
+      status_short: rawItem.status_short,
+      timestamp: rawTs || new Date().toISOString(),
       time_label: timeLabel,
       total_scans: rawItem.total_scans,
       anomalies: rawItem.anomalies,
     };
 
-    setData((prev) => {
-      // Avoid duplicate consecutive timestamps for the same device
-      const last = prev[prev.length - 1];
-      if (last && last.device_id === normalized.device_id && last.time_label === normalized.time_label) {
-        return prev;
-      }
-      return [...prev.slice(-(MAX_POINTS - 1)), normalized];
-    });
-
+    setData((prev) => [...prev.slice(-(MAX_POINTS - 1)), normalized]);
     setPacketCount((c) => c + 1);
-    onData?.(normalized);
-  }, [onData]);
+    onDataRef.current?.(normalized);
+  }, []);
 
-  // Seed with initial data if available
+  // Seed once with initial MongoDB history from Dashboard
   useEffect(() => {
     if (data.length === 0 && initialData && initialData.length > 0) {
-      const seeded = initialData.slice(0, MAX_POINTS).map((r, i) => {
-        const ts = r.timestamp ? new Date(r.timestamp) : new Date();
-        return {
-          device_id: r.device || `Node-${i + 1}`,
+      const seeded = [...initialData]
+        .slice(0, MAX_POINTS)
+        .reverse()
+        .map((r, i) => ({
+          id: r.id || `seed-${i}`,
+          device_id: r.device || `Device-${String(i).padStart(3, '0')}`,
           machine_name: r.machine_name || r.device || 'Machine',
-          temperature: Number(r.value ?? r.temp ?? 22.0),
+          temperature: Number(r.temp ?? r.value ?? 22.5),
           vibration: Number(r.vib ?? 0.25),
-          power_usage: Number(r.pwr ?? 12.0),
-          pressure: Number(r.pressure ?? 0),
+          power_usage: Number(r.pwr ?? 2.5),
+          pressure: Number(r.pressure ?? 100.0),
+          current_avg: Number(r.current_avg ?? 0.12),
+          voltage_avg: Number(r.voltage_avg ?? 217.5),
+          loss: r.loss,
+          threshold: r.threshold ?? 0.205,
+          confidence: r.confidence,
           is_anomaly: r.status === 'critical' || r.anomaly === 1,
           status: r.status || 'normal',
-          time_label: !isNaN(ts.getTime())
-            ? ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-            : `${i + 1}s ago`,
-        };
-      });
+          time_label: r.timestamp ? formatUtcTimestamp(r.timestamp, false) : r.time || 'Synced',
+        }));
       setData(seeded);
     }
-  }, [initialData]);
+  }, [initialData, data.length]);
 
-  // Primary: WebSocket Engine
+  // Primary WebSocket + Resilient HTTP Fallback
   useEffect(() => {
     isComponentMounted.current = true;
 
@@ -137,7 +165,7 @@ export default function LiveChart({ onConnect, onData, initialData = [] }) {
         ws.onopen = () => {
           if (!isComponentMounted.current) return;
           setStreamMode('ws');
-          onConnect?.();
+          onConnectRef.current?.();
         };
 
         ws.onmessage = (event) => {
@@ -149,52 +177,46 @@ export default function LiveChart({ onConnect, onData, initialData = [] }) {
               ingestTelemetry(parsed);
             }
           } catch {
-            // Non-JSON or malformed frame
+            // Ignore non-JSON frames
           }
-        };
-
-        ws.onerror = () => {
-          if (!isComponentMounted.current) return;
-          // Fall back gracefully to HTTP stream
         };
 
         ws.onclose = () => {
           if (!isComponentMounted.current) return;
-          retryTimeoutRef.current = setTimeout(connectWs, 4000);
+          retryTimeoutRef.current = setTimeout(connectWs, 5000);
         };
 
         wsRef.current = ws;
       } catch {
-        // Fall back gracefully
+        // Fallback handled by pollIntervalRef
       }
     };
 
     connectWs();
 
-    // Resilient Fallback: If no packets received via WebSocket for 3.5 seconds, poll HTTP
     pollIntervalRef.current = setInterval(async () => {
-      const now = Date.now();
-      const timeSinceLast = now - lastPacketTimeRef.current;
-
-      // If WS hasn't fired in > 3.5 seconds, actively poll recent telemetry
-      if (timeSinceLast > 3500) {
+      const timeSinceLast = Date.now() - lastPacketTimeRef.current;
+      if (timeSinceLast > 5500) {
         try {
-          const res = await authenticatedFetch('/api/history?limit=3');
+          const res = await authenticatedFetch('/api/history?limit=1');
           if (res && res.ok) {
             const json = await res.json();
             const list = json.history || [];
             if (list.length > 0) {
               setStreamMode('http');
-              // Feed the most recent record
-              ingestTelemetry(list[0]);
-              onConnect?.();
+              ingestTelemetry({
+                ...list[0],
+                total_scans: json.total_scans,
+                anomalies: json.total_anomalies,
+              });
+              onConnectRef.current?.();
             }
           }
         } catch {
-          // Keep retrying seamlessly
+          // Keep retrying quietly
         }
       }
-    }, 2500);
+    }, 6000);
 
     return () => {
       isComponentMounted.current = false;
@@ -202,15 +224,15 @@ export default function LiveChart({ onConnect, onData, initialData = [] }) {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
       if (wsRef.current) wsRef.current.close();
     };
-  }, [ingestTelemetry, onConnect]);
+  }, [ingestTelemetry]);
 
   const reversed = [...data].reverse();
   const visibleRows = expanded ? reversed : reversed.slice(0, PREVIEW_COUNT);
   const hiddenCount = reversed.length - PREVIEW_COUNT;
 
   const currentMeanTemp = data.length > 0
-    ? (data.reduce((acc, d) => acc + (d.temperature || 0), 0) / data.length).toFixed(1)
-    : '22.0';
+    ? (data.reduce((acc, d) => acc + (d.temperature || 0), 0) / data.length).toFixed(2)
+    : '22.50';
 
   const currentPeakVib = data.length > 0
     ? Math.max(...data.map((d) => d.vibration || 0)).toFixed(2)
@@ -218,7 +240,7 @@ export default function LiveChart({ onConnect, onData, initialData = [] }) {
 
   return (
     <div className="live-scada-container">
-      {/* ── High-Tech Header ── */}
+      {/* ── Header ── */}
       <div className="scada-header">
         <div className="scada-title-group">
           <div className="scada-title">
@@ -226,7 +248,7 @@ export default function LiveChart({ onConnect, onData, initialData = [] }) {
             <h3>Real-Time Industrial Sensor Telemetry Stream</h3>
           </div>
           <p className="scada-subtitle">
-            Autonomous multi-sensor ingestion, temporal LSTM autoencoder scoring, and SHA-256 consortium audit trail
+            Autonomous 6-channel ingestion, temporal LSTM autoencoder scoring, and SHA-256 consortium audit trail
           </p>
         </div>
 
@@ -237,7 +259,7 @@ export default function LiveChart({ onConnect, onData, initialData = [] }) {
               {streamMode === 'ws'
                 ? 'WebSocket Live (5.0s)'
                 : streamMode === 'http'
-                ? 'HTTP Auto-Stream (5.0s)'
+                ? 'MongoDB Poll Sync (6.0s)'
                 : 'Connecting Pipeline...'}
             </span>
           </div>
@@ -270,22 +292,22 @@ export default function LiveChart({ onConnect, onData, initialData = [] }) {
         <div className="strip-item">
           <span className="strip-label">Mean Fleet Temp</span>
           <span className="strip-value cyan">{currentMeanTemp} °C</span>
-          <span className="strip-note">Nominal 15–35°C</span>
+          <span className="strip-note">Nominal 20.9–24.9 °C</span>
         </div>
         <div className="strip-item">
           <span className="strip-label">Peak Vibration</span>
           <span className="strip-value amber">{currentPeakVib} mm/s</span>
-          <span className="strip-note">Tolerance &lt; 3.1 mm/s</span>
+          <span className="strip-note">Nominal &le; 3.08 mm/s</span>
         </div>
         <div className="strip-item">
-          <span className="strip-label">Sampling Pulse</span>
-          <span className="strip-value emerald">0.50 Hz</span>
-          <span className="strip-note">Continuous 24/7</span>
+          <span className="strip-label">Sampling Cadence</span>
+          <span className="strip-value emerald">1 / 5.0 s</span>
+          <span className="strip-note">Industrial SCADA Rate</span>
         </div>
         <div className="strip-item">
-          <span className="strip-label">Live Ingested Packets</span>
+          <span className="strip-label">Session Stream Frames</span>
           <span className="strip-value purple">{packetCount > 0 ? packetCount : data.length}</span>
-          <span className="strip-note">Edge Verified</span>
+          <span className="strip-note">MongoDB Persisted</span>
         </div>
       </div>
 
@@ -302,7 +324,7 @@ export default function LiveChart({ onConnect, onData, initialData = [] }) {
             {(chartMetric === 'vib' || chartMetric === 'dual') && (
               <span className="legend-item"><span className="legend-color amber" /> Vibration (mm/s)</span>
             )}
-            <span className="legend-item"><span className="legend-color red" /> Nominal Threshold Limit</span>
+            <span className="legend-item"><span className="legend-color red" /> Anomaly Boundary (25.0 °C)</span>
           </div>
         </div>
 
@@ -320,10 +342,6 @@ export default function LiveChart({ onConnect, onData, initialData = [] }) {
                     <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.4} />
                     <stop offset="95%" stopColor="#38bdf8" stopOpacity={0.0} />
                   </linearGradient>
-                  <linearGradient id="vibGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="#f59e0b" stopOpacity={0.0} />
-                  </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
                 <XAxis
@@ -339,7 +357,7 @@ export default function LiveChart({ onConnect, onData, initialData = [] }) {
                   tick={{ fontSize: 10, fill: '#64748b' }}
                   tickLine={false}
                   axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
-                  domain={chartMetric === 'vib' ? [0, 6] : ['dataMin - 1', 'dataMax + 2']}
+                  domain={chartMetric === 'vib' ? [0, 5.5] : ['dataMin - 1', 'dataMax + 1']}
                 />
                 {chartMetric === 'dual' && (
                   <YAxis
@@ -349,11 +367,13 @@ export default function LiveChart({ onConnect, onData, initialData = [] }) {
                     tick={{ fontSize: 10, fill: '#f59e0b' }}
                     tickLine={false}
                     axisLine={{ stroke: 'rgba(245,158,11,0.2)' }}
-                    domain={[0, 6]}
+                    domain={[0, 5.5]}
                   />
                 )}
                 <Tooltip content={<CustomStreamTooltip />} />
-                <ReferenceLine yAxisId="temp" y={25} stroke="#ef4444" strokeDasharray="4 4" strokeOpacity={0.7} />
+                {chartMetric !== 'vib' && (
+                  <ReferenceLine yAxisId="temp" y={25.0} stroke="#ef4444" strokeDasharray="4 4" strokeOpacity={0.7} />
+                )}
 
                 {(chartMetric === 'temp' || chartMetric === 'dual') && (
                   <Area
@@ -388,7 +408,7 @@ export default function LiveChart({ onConnect, onData, initialData = [] }) {
       <div className="scada-table-card">
         <div className="table-card-top">
           <span className="table-card-title">Edge Telemetry Packet Feed</span>
-          <span className="table-card-count">{data.length} active edge frames</span>
+          <span className="table-card-count">{data.length} recent verified frames</span>
         </div>
 
         {data.length === 0 ? (
@@ -404,7 +424,7 @@ export default function LiveChart({ onConnect, onData, initialData = [] }) {
                     <th>Equipment Type</th>
                     <th>Thermal (°C)</th>
                     <th>Vibration (mm/s)</th>
-                    <th>Power (W)</th>
+                    <th>Power (kW)</th>
                     <th>Pressure</th>
                     <th>AI Evaluation</th>
                     <th>Provenance</th>
@@ -413,33 +433,37 @@ export default function LiveChart({ onConnect, onData, initialData = [] }) {
                 <tbody>
                   {visibleRows.map((row, idx) => {
                     const isAlert = row.is_anomaly || row.status === 'critical';
+                    const isTempExcursion = row.temperature > 25.0 || row.temperature < 20.5;
+                    const isVibExcursion = row.vibration > 3.10;
                     return (
-                      <tr key={idx} className={isAlert ? 'scada-row-alert' : 'scada-row-nominal'}>
+                      <tr key={row.id || idx} className={isAlert ? 'scada-row-alert' : 'scada-row-nominal'}>
                         <td className="time-cell">{row.time_label}</td>
                         <td className="node-cell">
                           <span className="node-id-badge">{row.device_id}</span>
                         </td>
                         <td className="machine-cell">{row.machine_name}</td>
-                        <td className={`numeric-cell ${row.temperature > 85 ? 'val-critical' : row.temperature > 35 ? 'val-warning' : 'val-normal'}`}>
-                          {row.temperature != null ? `${Number(row.temperature).toFixed(1)} °C` : '—'}
+                        <td className={`numeric-cell ${isTempExcursion ? 'val-critical' : 'val-normal'}`}>
+                          {row.temperature != null ? `${Number(row.temperature).toFixed(2)} °C` : '—'}
                         </td>
-                        <td className={`numeric-cell ${row.vibration > 8 ? 'val-critical' : 'val-normal'}`}>
+                        <td className={`numeric-cell ${isVibExcursion ? 'val-critical' : 'val-normal'}`}>
                           {row.vibration != null ? `${Number(row.vibration).toFixed(2)} mm/s` : '—'}
                         </td>
                         <td className="numeric-cell">
-                          {row.power_usage != null ? `${Number(row.power_usage).toFixed(1)} W` : '—'}
+                          {row.power_usage != null ? `${Number(row.power_usage).toFixed(2)} kW` : '—'}
                         </td>
                         <td className="numeric-cell">
                           {row.pressure != null && row.pressure > 0 ? `${Number(row.pressure).toFixed(1)} bar` : '—'}
                         </td>
                         <td>
                           <span className={`ai-badge ${isAlert ? 'critical' : 'optimal'}`}>
-                            {isAlert ? 'Critical Alert' : 'Optimal'}
+                            {isAlert
+                              ? `Anomaly (${row.confidence ? `${Number(row.confidence).toFixed(1)}%` : 'Critical'})`
+                              : 'Optimal'}
                           </span>
                         </td>
                         <td className="provenance-cell">
-                          <span className="sha-pill" title="Cryptographically committed to Hyperledger Fabric">
-                            SHA-256 Armed
+                          <span className="sha-pill" title="Cryptographically committed to MongoDB &amp; Hyperledger Fabric">
+                            SHA-256 Verified
                           </span>
                         </td>
                       </tr>
