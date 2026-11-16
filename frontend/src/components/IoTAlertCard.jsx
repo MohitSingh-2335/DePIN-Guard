@@ -40,8 +40,8 @@ const IoTAlertCard = ({
       ),
       borderColor: '#f59e0b',
       badgeClass: 'badge-warning',
-      badgeText: 'WARNING',
-      instruction: 'Monitor closely. Check sensor telemetry if trend continues.',
+      badgeText: 'PATTERN DRIFT',
+      instruction: 'Temporal sequence correlation drifting. Monitor joint multi-sensor pattern.',
     },
     critical: {
       icon: (
@@ -55,8 +55,6 @@ const IoTAlertCard = ({
       instruction: 'IMMEDIATE ACTION REQUIRED. Inspect machine and alert maintenance.',
     },
   };
-
-  const config = alertConfig[alert_level] || alertConfig.normal;
 
   const categorizeReading = (label, value, unit, normalRange) => {
     const { min, max } = normalRange;
@@ -93,6 +91,10 @@ const IoTAlertCard = ({
     getStatusForMetric('voltage_avg', voltage_avg),
   ];
 
+  const hasConcerningReading = readings.some(r => r.category === 'concerning');
+  const effectiveLevel = (alert_level === 'critical' && !hasConcerningReading) ? 'warning' : alert_level;
+  const config = alertConfig[effectiveLevel] || alertConfig.normal;
+
   return (
     <div
       className={`iot-alert-card iot-alert-card--${alert_level}`}
@@ -119,6 +121,11 @@ const IoTAlertCard = ({
       <div className="iot-status-section">
         <p className="iot-status-text">{status_short}</p>
         <p className="iot-instruction">{config.instruction}</p>
+        {effectiveLevel !== 'normal' && !hasConcerningReading && (
+          <p style={{ fontSize: '0.72rem', color: '#38bdf8', marginTop: '4px' }}>
+            Multi-Sensor Fusion: All 6 channels within individual nominal ranges; pattern flagged by joint LSTM reconstruction loss.
+          </p>
+        )}
       </div>
 
       {/* Readings - 6-Sensor Matrix */}
