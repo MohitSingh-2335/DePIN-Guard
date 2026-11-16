@@ -46,11 +46,11 @@ const Footer = () => {
         <div className="footer-section">
           <h3 className="footer-title">Architecture</h3>
           <ul className="footer-links">
-            <li><span style={{ color: '#94a3b8' }}>PyTorch LSTM Autoencoder</span></li>
-            <li><span style={{ color: '#94a3b8' }}>PyTorch Geometric DeviceGCN</span></li>
-            <li><span style={{ color: '#94a3b8' }}>Hyperledger Fabric / Hash-Chain</span></li>
-            <li><span style={{ color: '#94a3b8' }}>FastAPI + Motor MongoDB</span></li>
-            <li><span style={{ color: '#94a3b8' }}>React + Vite + Recharts</span></li>
+            <li><a href="/ai-analysis">LSTM Autoencoder Engine</a></li>
+            <li><a href="/blockchain">Consortium Blockchain Ledger</a></li>
+            <li><a href="/security">HMAC Security Verification</a></li>
+            <li><a href="https://github.com/MohitSingh-2335/DePIN-Guard" target="_blank" rel="noopener noreferrer">Open-Source Repository</a></li>
+            <li><a href="https://depin-guard-backend-nsvs.onrender.com/health" target="_blank" rel="noopener noreferrer">System Health Status</a></li>
           </ul>
         </div>
 
