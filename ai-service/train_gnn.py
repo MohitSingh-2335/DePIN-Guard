@@ -53,7 +53,7 @@ def load_factory_graph_snapshots():
 
     temp_vals = pivoted["Temperature"].values
     vib_vals = pivoted["Vibration"].values
-    pwr_vals = (pivoted["Energy_Consumption"] * 10.0).values
+    pwr_vals = pivoted["Energy_Consumption"].round(2).values
     press_vals = df_plc["hydraulic_pressure"].values
 
     total_steps = len(pivoted)
