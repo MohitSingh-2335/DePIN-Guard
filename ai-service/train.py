@@ -141,7 +141,7 @@ def train():
         val_recon = model(X_val)
         val_errors = torch.mean((X_val[:, -1, :] - val_recon[:, -1, :]) ** 2, dim=1).numpy()
 
-    val_last_steps = scaled_val[SEQ_LENGTH - 1 :]
+    val_last_steps = X_val[:, -1, :].numpy()
     max_devs = np.max(np.maximum(0.0, np.maximum(-val_last_steps, val_last_steps - 1.0)), axis=1)
     combined_val_errors = val_errors + (max_devs * threshold * 2.0)
 
