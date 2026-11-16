@@ -225,11 +225,9 @@ const DashboardPage = () => {
 
   useEffect(() => {
     fetchDashboardData();
-    fetchChartData(timePeriod);
-    const dashInterval = setInterval(fetchDashboardData, 3000);
-    const chartInterval = setInterval(() => fetchChartData(timePeriod), 8000);
-    return () => { clearInterval(dashInterval); clearInterval(chartInterval); };
-  }, [timePeriod]);
+    const dashInterval = setInterval(fetchDashboardData, 6000);
+    return () => clearInterval(dashInterval);
+  }, []);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -304,6 +302,14 @@ const DashboardPage = () => {
     return matchesFilter && matchesSearch;
   });
 
+  const statusPriority = { critical: 0, warning: 1, normal: 2 };
+  const sortedFleet = [...filteredFleet].sort((a, b) => {
+    const pA = statusPriority[a.status] ?? 2;
+    const pB = statusPriority[b.status] ?? 2;
+    if (pA !== pB) return pA - pB;
+    return a.device_id.localeCompare(b.device_id);
+  });
+
   return (
     <Layout>
       <div className="dashboard-container">
@@ -315,7 +321,7 @@ const DashboardPage = () => {
               <h1 className="page-title">Industrial IoT Telemetry &amp; DePIN Audit Fleet</h1>
               <span className="live-status-pill">
                 <span className="status-dot connected" style={{ width: '8px', height: '8px' }} />
-                LIVE INGESTION (2.0s)
+                LIVE INGESTION (5.0s)
               </span>
             </div>
             <p className="page-subtitle">Autonomous multi-sensor streaming, temporal LSTM reconstruction, DeviceGCN topology, and consortium blockchain ledger</p>
@@ -384,53 +390,6 @@ const DashboardPage = () => {
         {/* ── Live Sensor Updates ── */}
         <LiveChart onConnect={() => setStreamConnected(true)} onData={handleLiveTelemetry} initialData={recentData} />
 
-        {/* ── Recent Sensor Readings ── */}
-        <div className="data-section" ref={sensorRef}>
-          <div className="section-header">
-            <div>
-              <h2 className="section-title">Latest Telemetry Stream</h2>
-              <p className="section-subtitle">Real-time edge readings arriving from industrial sensors</p>
-            </div>
-            {!loading && recentData.length > 0 && (
-              <span className="sensor-count">{recentData.length} active buffers</span>
-            )}
-          </div>
-          <div className="data-grid">
-            {loading ? (
-              <p className="loading-text">Loading sensor data...</p>
-            ) : recentData.length === 0 ? (
-              <p className="loading-text">Streaming telemetry...</p>
-            ) : (
-              visibleSensors.map((data) => (
-                <div key={data.id} className="data-card">
-                  <div className="data-header">
-                    <span className="device-name">{data.machine_name || data.device}</span>
-                    <span className="status-badge" style={{
-                      backgroundColor: getStatusColor(data.status) + '20',
-                      color: getStatusColor(data.status),
-                    }}>
-                      {data.status}
-                    </span>
-                  </div>
-                  <div className="data-body">
-                    <span className="data-value">{data.value ?? 'N/A'}</span>
-                    <span className="data-unit">{data.unit}</span>
-                  </div>
-                  <div className="data-footer">
-                    <span>{data.device}</span>
-                    <span>{data.time}</span>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-          {!loading && recentData.length > SENSOR_PREVIEW && (
-            <button className="show-more-btn" onClick={() => setShowAllSensors(p => !p)}>
-              {showAllSensors ? '▲ Show Less' : `▼ Show ${recentData.length - SENSOR_PREVIEW} More Readings`}
-            </button>
-          )}
-        </div>
-
         {/* ── 33-Device Industrial Fleet Matrix ── */}
         <div className="data-section">
           <div className="section-header">
@@ -484,10 +443,10 @@ const DashboardPage = () => {
             </div>
           </div>
           <div className="iot-devices-section">
-            {filteredFleet.length === 0 ? (
+            {sortedFleet.length === 0 ? (
               <p className="loading-text">No machines match the filter.</p>
             ) : (
-              filteredFleet.map((data) => (
+              sortedFleet.map((data) => (
                 <IoTAlertCard
                   key={data.device_id}
                   device_id={data.device_id}
@@ -509,116 +468,6 @@ const DashboardPage = () => {
               ))
             )}
           </div>
-        </div>
-
-        {/* ── Device Activity Analytics ── */}
-        <div className="chart-section">
-          <div className="section-header">
-            <div>
-              <h2 className="section-title">Device Activity</h2>
-              <p className="chart-description">{getActivityLabel(timePeriod)}</p>
-            </div>
-            <select className="time-select" value={timePeriod} onChange={e => setTimePeriod(e.target.value)}>
-              <option value="24h">Last 24 Hours</option>
-              <option value="7d">Last 7 Days</option>
-              <option value="30d">Last 30 Days</option>
-            </select>
-          </div>
-
-          {chartData.length > 0 && (
-            <div className="chart-summary">
-              <div className="chart-pill">
-                <span className="pill-label">Total Scans</span>
-                <span className="pill-value">{totalScans.toLocaleString()}</span>
-              </div>
-              <div className="chart-pill">
-                <span className="pill-label">Total Alerts</span>
-                <span className="pill-value" style={{ color: totalAlerts > 0 ? '#ef4444' : '#22c55e' }}>
-                  {totalAlerts}
-                </span>
-              </div>
-              <div className="chart-pill">
-                <span className="pill-label">Peak Time</span>
-                <span className="pill-value">{peakLabel}</span>
-              </div>
-              <div className="chart-pill">
-                <span className="pill-label">Avg / Block</span>
-                <span className="pill-value">{avgScans}</span>
-              </div>
-            </div>
-          )}
-
-          <div className="chart-wrapper">
-            {chartData.length === 0 ? (
-              <div className="chart-empty">
-                <svg viewBox="0 0 48 48" width="40" height="40" fill="none">
-                  <rect x="4" y="28" width="8" height="16" rx="2" fill="rgba(99,102,241,0.3)" />
-                  <rect x="16" y="18" width="8" height="26" rx="2" fill="rgba(99,102,241,0.3)" />
-                  <rect x="28" y="22" width="8" height="22" rx="2" fill="rgba(99,102,241,0.3)" />
-                  <rect x="40" y="10" width="8" height="34" rx="2" fill="rgba(99,102,241,0.3)" />
-                </svg>
-                <p>No activity data yet</p>
-                <span>Data will appear as devices send readings</span>
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height={280}>
-                <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 20 }} barCategoryGap="30%">
-                  <CartesianGrid strokeDasharray="3 4" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                  <XAxis
-                    dataKey="label"
-                    tick={{ fill: '#4b5563', fontSize: 11 }}
-                    axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
-                    tickLine={false}
-                    label={{ value: timePeriod === '24h' ? 'Time (Hours)' : 'Time (Days)', position: 'insideBottom', offset: -10, fill: '#4b5563', fontSize: 11 }}
-                  />
-                  <YAxis
-                    tick={{ fill: '#4b5563', fontSize: 11 }}
-                    axisLine={false} tickLine={false} width={36}
-                    label={{ value: 'Count', angle: -90, position: 'insideLeft', offset: 10, fill: '#4b5563', fontSize: 11 }}
-                  />
-                  <Tooltip content={<CustomTooltip timePeriod={timePeriod} />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
-                  <Legend
-                    verticalAlign="top" align="right" iconType="circle" iconSize={8}
-                    formatter={(value) => (
-                      <span style={{ color: '#94a3b8', fontSize: 11 }}>
-                        {value === 'raw' ? 'Scans' : 'Alerts'}
-                      </span>
-                    )}
-                    wrapperStyle={{ paddingBottom: 8 }}
-                  />
-                  {avgScans > 0 && (
-                    <ReferenceLine y={avgScans} stroke="rgba(167,139,250,0.35)" strokeDasharray="4 3"
-                      label={{ value: `Avg ${avgScans}`, position: 'right', fill: '#a78bfa', fontSize: 10 }}
-                    />
-                  )}
-                  <Bar dataKey="raw" name="raw" radius={[4, 4, 0, 0]} maxBarSize={44}>
-                    {chartData.map((entry, i) => (
-                      <Cell key={i} fill={getBarColor(entry)} opacity={entry.raw === 0 ? 0.2 : 0.85} />
-                    ))}
-                  </Bar>
-                  <Line
-                    dataKey="alerts" name="alerts" type="monotone"
-                    stroke="#ef4444" strokeWidth={2}
-                    dot={(props) => {
-                      const { cx, cy, payload, index } = props;
-                      if (payload.alerts === 0) return null;
-                      return <circle key={`dot-${index}`} cx={cx} cy={cy} r={4} fill="#ef4444" stroke="#0f1623" strokeWidth={2} />;
-                    }}
-                    activeDot={{ r: 5, fill: '#ef4444', stroke: '#0f1623', strokeWidth: 2 }}
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-
-          {chartData.length > 0 && (
-            <div className="chart-legend">
-              <span className="legend-item"><span className="legend-dot" style={{ background: '#6366f1' }}></span>Normal scans</span>
-              <span className="legend-item"><span className="legend-dot" style={{ background: '#38bdf8' }}></span>High activity</span>
-              <span className="legend-item"><span className="legend-dot" style={{ background: '#a78bfa' }}></span>Peak</span>
-              <span className="legend-item"><span className="legend-dot" style={{ background: '#ef4444', borderRadius: '50%' }}></span>Alerts</span>
-            </div>
-          )}
         </div>
 
       </div>
