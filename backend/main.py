@@ -1,6 +1,14 @@
 import time as _time
 import os
 import sys
+
+# Limit mathematical library threads to prevent memory spikes on free-tier containers (Render 512MB)
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["TORCH_NUM_THREADS"] = "1"
+
+import sys
 import asyncio
 
 _backend_dir = os.path.dirname(os.path.abspath(__file__))
@@ -223,7 +231,7 @@ async def _setup_system_state():
     if len(system_state["latest_by_device"]) < 33:
         try:
             from iot.data_ingestor import load_industrial_datasets
-            records = load_industrial_datasets()
+            records = load_industrial_datasets(start_ts_offset=275, max_timestamps=50)
             for dev_idx in range(33):
                 dev_id = f"Device-{dev_idx:03d}"
                 rec = records[dev_idx % len(records)] if records else {
@@ -298,11 +306,14 @@ def run_gnn_analysis():
         x_nodes = anomaly_detector.get_node_features(DEVICES)
         if x_nodes is None:
             return
-        with torch.no_grad():
+        with torch.inference_mode():
             out = gnn_model(x_nodes, gnn_adj)
             probs = torch.exp(out)[:, 1]
             flagged = int((probs > 0.5).sum().item())
             print(f"[GNN] Evaluated 33 factory machines | Inter-device cascade anomalies: {flagged}")
+        import gc
+        del x_nodes, out
+        gc.collect()
     except Exception as exc:
         print(f"[GNN] Execution notice: {exc}")
 
@@ -1092,7 +1103,7 @@ async def autonomous_feeder_loop():
     interval = float(os.getenv("FEEDER_INTERVAL_SECONDS", "5.0"))
     try:
         from iot.data_ingestor import load_industrial_datasets, DEVICES, format_status
-        records = load_industrial_datasets()
+        records = load_industrial_datasets(start_ts_offset=275, max_timestamps=300)
     except Exception as exc:
         print(f"[AutonomousFeeder] Notice loading industrial datasets ({exc})")
         records = []
