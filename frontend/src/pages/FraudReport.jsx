@@ -18,7 +18,9 @@ export default function FraudReport() {
       if (!res || !res.ok) throw new Error(`API error: ${res?.status}`);
       const data = await res.json();
       const alertsData = Array.isArray(data) ? data : (data.alerts || []);
-      setAlerts(Array.isArray(alertsData) ? alertsData : []);
+      const alertList = Array.isArray(alertsData) ? alertsData : [];
+      setAlerts(alertList);
+      setResolved(new Set(alertList.filter(a => a.resolved).map(a => a.id)));
       setError(null);
     } catch (err) {
       setError('Could not load fraud alerts. Is the backend running?');
@@ -32,6 +34,19 @@ export default function FraudReport() {
     const interval = setInterval(() => fetchAlerts(false), 6000);
     return () => clearInterval(interval);
   }, [fetchAlerts]);
+
+  const handleResolveAlert = async (alertId) => {
+    try {
+      await authenticatedFetch(`/api/fraud-alerts/${alertId}/resolve`, { method: 'POST' });
+    } catch (err) {
+      console.warn('[Fraud] Could not persist alert resolution:', err);
+    }
+    setResolved(prev => {
+      const next = new Set(prev);
+      next.has(alertId) ? next.delete(alertId) : next.add(alertId);
+      return next;
+    });
+  };
 
   const getConfidenceRatio = (confidence) => {
     let c = parseFloat(confidence || 0);
@@ -53,12 +68,18 @@ export default function FraudReport() {
     return 'low';
   };
 
-  const getTypeIcon = (type) => {
+  const getTypeBadge = (type) => {
     const t = type?.toLowerCase() || '';
-    if (t.includes('cluster'))   return '[Cluster]';
-    if (t.includes('frequency')) return '[Rate]';
-    if (t.includes('injection')) return '[Inject]';
-    return '[Alert]';
+    let badgeClass = 'badge-normal';
+    let label = type?.replace(/_/g, ' ') || 'Anomaly';
+    if (t.includes('anomaly') || t.includes('cluster')) badgeClass = 'badge-danger';
+    else if (t.includes('intrusion') || t.includes('tamper') || t.includes('frequency')) badgeClass = 'badge-warning';
+    
+    return (
+      <span className={`status-badge ${badgeClass}`}>
+        {label}
+      </span>
+    );
   };
 
   const filtered = alerts.filter(a => {
@@ -188,9 +209,7 @@ export default function FraudReport() {
                           `}
                         >
                           <td>
-                            <span className="type-badge">
-                              {getTypeIcon(alert.type)} {alert.type?.replace(/_/g, ' ')}
-                            </span>
+                            {getTypeBadge(alert.type)}
                           </td>
                           <td>
                             <code className="asset-id">{alert.asset_id}</code>
@@ -231,15 +250,9 @@ export default function FraudReport() {
                               <button
                                 className={`row-action-btn ${isResolved ? 'btn-resolved' : 'btn-resolve'}`}
                                 title={isResolved ? 'Mark as Pending' : 'Mark as Resolved'}
-                                onClick={() => {
-                                  setResolved(prev => {
-                                    const next = new Set(prev);
-                                    isResolved ? next.delete(alert.id) : next.add(alert.id);
-                                    return next;
-                                  });
-                                }}
+                                onClick={() => handleResolveAlert(alert.id)}
                               >
-                                {isResolved ? 'Undo' : 'Resolve'}
+                                {isResolved ? 'Resolved' : 'Resolve'}
                               </button>
                             </div>
                           </td>
@@ -259,7 +272,7 @@ export default function FraudReport() {
             <div className="fraud-modal" onClick={e => e.stopPropagation()}>
               <div className="fraud-modal-header">
                 <h2>Alert Details</h2>
-                <button className="fraud-modal-close" onClick={() => setSelected(null)}>x</button>
+                <button className="fraud-modal-close" onClick={() => setSelected(null)}>×</button>
               </div>
               <div className="fraud-modal-body">
 
@@ -269,7 +282,7 @@ export default function FraudReport() {
                     <div className="fraud-detail-item">
                       <span className="fraud-detail-label">Type</span>
                       <span className="fraud-detail-value">
-                        {getTypeIcon(selectedAlert.type)} {selectedAlert.type?.replace(/_/g, ' ')}
+                        {getTypeBadge(selectedAlert.type)}
                       </span>
                     </div>
                     <div className="fraud-detail-item">
@@ -281,7 +294,7 @@ export default function FraudReport() {
                     <div className="fraud-detail-item">
                       <span className="fraud-detail-label">Confidence</span>
                       <span className="fraud-detail-value" style={{ color: getConfidenceColor(selectedAlert.confidence) }}>
-                        {(parseFloat(selectedAlert.confidence) * 100).toFixed(1)}%
+                        {(getConfidenceRatio(selectedAlert.confidence) * 100).toFixed(1)}%
                       </span>
                     </div>
                     <div className="fraud-detail-item">
@@ -306,13 +319,18 @@ export default function FraudReport() {
                 <div className="fraud-modal-section">
                   <div className="fraud-modal-section-title">Suggested Action</div>
                   <p>
-                    {parseFloat(selectedAlert.confidence) > 0.8
+                    {getConfidenceRatio(selectedAlert.confidence) > 0.8
                       ? 'Critical: Immediately isolate the affected node and alert the security team. Do not allow further transactions until investigation is complete.'
-                      : parseFloat(selectedAlert.confidence) > 0.6
+                      : getConfidenceRatio(selectedAlert.confidence) > 0.6
                       ? 'Warning: Monitor the node closely for the next 30 minutes. Schedule an inspection if activity continues.'
                       : 'Notice: No immediate action needed. Continue monitoring. Flag for review in next routine check.'}
                   </p>
                 </div>
+
+              </div>
+            </div>
+          </div>
+        )}
 
               </div>
             </div>
