@@ -3,19 +3,22 @@ import Layout from '../components/layout/Layout';
 import { authenticatedFetch } from '../utils/api';
 import './HistoryPage.css';
 
-// --- Helper: Time Formatting ---
-const formatTime = (timestamp) => {
+// --- Helper: UTC Time Formatting ---
+const formatTimestamp = (timestamp) => {
   if (!timestamp) return '---';
   try {
-    const date = new Date(timestamp);
+    let clean = String(timestamp).trim();
+    if (!clean.endsWith('Z') && !clean.includes('+')) {
+      clean += 'Z';
+    }
+    const date = new Date(clean);
     if (isNaN(date.getTime())) return String(timestamp);
     const now = new Date();
     const diffInSeconds = Math.floor((now - date) / 1000);
     
-    if (diffInSeconds < 60) return 'Just now';
-    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
-    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
-    return date.toLocaleString();
+    if (diffInSeconds >= 0 && diffInSeconds < 60) return 'Just now';
+    if (diffInSeconds >= 0 && diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' · ' + date.toLocaleDateString([], { month: 'short', day: 'numeric' });
   } catch {
     return String(timestamp);
   }
@@ -48,7 +51,7 @@ const HistoryPage = () => {
 
   useEffect(() => {
     fetchHistory();
-    const interval = setInterval(fetchHistory, 4000);
+    const interval = setInterval(fetchHistory, 6000);
     return () => clearInterval(interval);
   }, []);
 
@@ -161,6 +164,7 @@ const HistoryPage = () => {
                   <th>Cryptographic Hash</th>
                   <th>Node Machine</th>
                   <th>Telemetry Readings</th>
+                  <th>AI Loss / Conf</th>
                   <th>Audit Status</th>
                   <th>Recorded Time</th>
                   <th>Action</th>
@@ -176,15 +180,25 @@ const HistoryPage = () => {
                     </td>
                     <td><strong className="node-code">{item.device}</strong></td>
                     <td style={{ fontSize: '0.8rem', color: '#cbd5e1' }}>
-                      {item.temp}°C · {item.vib} mm/s · {item.pwr}W
+                      {item.temp}°C · {item.vib} mm/s · {item.pwr} kW {item.pressure ? `· ${item.pressure} bar` : ''}
+                    </td>
+                    <td style={{ fontSize: '0.78rem' }}>
+                      <span style={{ color: item.loss > item.threshold ? '#ef4444' : '#94a3b8', fontWeight: 600 }}>
+                        {item.loss !== undefined ? Number(item.loss).toFixed(4) : '—'}
+                      </span>
+                      {item.confidence ? (
+                        <span style={{ color: '#38bdf8', marginLeft: '6px', fontSize: '0.72rem' }}>
+                          ({item.confidence}%)
+                        </span>
+                      ) : null}
                     </td>
                     <td>
                       <span className={`status-pill ${getStatusClass(item.status)}`}>
-                        {item.status === 'critical' ? 'CRITICAL ALERT' : 'VERIFIED'}
+                        {item.status === 'critical' || item.anomaly === 1 ? 'CRITICAL ALERT' : 'VERIFIED'}
                       </span>
                     </td>
                     <td title={item.timestamp} style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-                      {formatTime(item.timestamp)}
+                      {formatTimestamp(item.timestamp)}
                     </td>
                     <td>
                       <button className="details-link" onClick={() => setSelectedItem(item)}>
@@ -254,10 +268,13 @@ const HistoryPage = () => {
                 <p><strong>Device ID:</strong> {selectedItem.device}</p>
                 <p><strong>Status:</strong> <span className={`status-pill ${getStatusClass(selectedItem.status)}`}>{selectedItem.status.toUpperCase()}</span></p>
                 <p><strong>Ledger Transaction Hash:</strong><br/><code style={{ wordBreak: 'break-all', color: '#38bdf8', background: 'rgba(56,189,248,0.1)', padding: '4px', borderRadius: '4px' }}>{selectedItem.hash}</code></p>
-                <p><strong>Telemetry Metrics:</strong> Temp: {selectedItem.temp}°C | Vibration: {selectedItem.vib} mm/s | Power: {selectedItem.pwr} W {selectedItem.pressure ? `| Pressure: ${selectedItem.pressure} bar` : ''}</p>
+                <p><strong>Telemetry Metrics:</strong> Temp: {selectedItem.temp}°C | Vibration: {selectedItem.vib} mm/s | Power: {selectedItem.pwr} kW {selectedItem.pressure ? `| Pressure: ${selectedItem.pressure} bar` : ''}</p>
+                <p><strong>AI Reconstruction Loss:</strong> <span style={{ color: selectedItem.loss > selectedItem.threshold ? '#ef4444' : '#22c55e', fontWeight: 600 }}>{selectedItem.loss !== undefined ? Number(selectedItem.loss).toFixed(6) : '—'}</span> (Threshold: {selectedItem.threshold !== undefined ? Number(selectedItem.threshold).toFixed(6) : '—'})</p>
+                <p><strong>Dynamic AI Confidence:</strong> <span style={{ color: '#38bdf8', fontWeight: 600 }}>{selectedItem.confidence !== undefined ? `${selectedItem.confidence}%` : '—'}</span> {selectedItem.severity ? `(Severity: ${selectedItem.severity})` : ''}</p>
                 <p><strong>AI Inference Engine:</strong> {selectedItem.ai_source}</p>
+                {selectedItem.description && <p><strong>Analysis:</strong> {selectedItem.description}</p>}
                 <p><strong>Recommendation:</strong> {selectedItem.recommendation || 'Operational parameters nominal.'}</p>
-                <p><strong>Full Timestamp:</strong> {selectedItem.timestamp}</p>
+                <p><strong>Full Timestamp (UTC):</strong> {selectedItem.timestamp}</p>
               </div>
             </div>
           </div>
