@@ -15,7 +15,7 @@ const IoTAlertCard = ({
   current_avg = 0.12,
   voltage_avg = 217.5,
   loss = null,
-  threshold = 0.163,
+  threshold = 0.205,
   confidence = null,
   recommendations = [],
   timestamp = null,
@@ -77,7 +77,7 @@ const IoTAlertCard = ({
       vibration: { min: 0.0, max: 3.10, unit: 'mm/s' },
       power_usage: { min: 0.0, max: 4.90, unit: 'kW' },
       pressure: { min: 30.0, max: 185.0, unit: 'bar' },
-      current_avg: { min: 0.05, max: 0.45, unit: 'A' },
+      current_avg: { min: 0.0, max: 14.0, unit: 'A' },
       voltage_avg: { min: 210.0, max: 225.0, unit: 'V' },
     };
     const rangeConfig = ranges[metric] || { min: 0, max: 100, unit: '' };
@@ -165,14 +165,19 @@ const IoTAlertCard = ({
         <span className="iot-meta-item">
           <span style={{ color: '#94a3b8' }}>AI Loss:</span>
           <strong style={{ color: alert_level === 'normal' ? '#38bdf8' : '#ef4444' }}>
-            {loss != null ? Number(loss).toFixed(4) : '< 0.163'}
+            {loss != null ? Number(loss).toFixed(4) : `< ${Number(threshold).toFixed(3)}`}
           </strong>
+          {confidence != null && (
+            <span style={{ color: '#94a3b8', marginLeft: '4px' }}>
+              ({Number(confidence).toFixed(1)}%)
+            </span>
+          )}
         </span>
         <span className="iot-meta-item" style={{ color: '#10b981' }}>
           <svg viewBox="0 0 20 20" fill="currentColor" width="12" height="12">
             <path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
           </svg>
-          SHA-256 Ledger Verified
+          {timestamp ? `Synced ${timestamp}` : 'SHA-256 Verified'}
         </span>
       </div>
     </div>
