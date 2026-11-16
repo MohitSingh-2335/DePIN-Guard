@@ -57,7 +57,7 @@ const BlockchainPage = () => {
 
   useEffect(() => {
     fetchBlockchainData();
-    const interval = setInterval(fetchBlockchainData, 5000);
+    const interval = setInterval(fetchBlockchainData, 6000);
     return () => clearInterval(interval);
   }, []);
 
@@ -180,12 +180,32 @@ const BlockchainPage = () => {
                   <code className="detail-val break-all">{selectedBlock.prev_hash}</code>
                 </div>
                 <div className="detail-row">
+                  <span className="detail-key">Merkle Root:</span>
+                  <code className="detail-val break-all">{selectedBlock.merkle_root || 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'}</code>
+                </div>
+                {selectedBlock.device_id && (
+                  <div className="detail-row">
+                    <span className="detail-key">Target Device:</span>
+                    <span className="detail-val" style={{ color: '#38bdf8', fontWeight: 600 }}>{selectedBlock.device_id}</span>
+                  </div>
+                )}
+                {selectedBlock.anomaly_score !== undefined && (
+                  <div className="detail-row">
+                    <span className="detail-key">Anomaly Loss Score:</span>
+                    <span className="detail-val" style={{ color: '#ef4444', fontWeight: 600 }}>{selectedBlock.anomaly_score}</span>
+                  </div>
+                )}
+                <div className="detail-row">
+                  <span className="detail-key">Consortium Org:</span>
+                  <span className="detail-val">{selectedBlock.orgMSP || 'ManufacturerMSP'}</span>
+                </div>
+                <div className="detail-row">
                   <span className="detail-key">Timestamp:</span>
                   <span className="detail-val">{selectedBlock.timestamp}</span>
                 </div>
                 <div className="detail-row">
                   <span className="detail-key">Transactions:</span>
-                  <span className="detail-val">{selectedBlock.tx_count || 0} TXs</span>
+                  <span className="detail-val">{selectedBlock.transactions || selectedBlock.tx_count || 1} TX</span>
                 </div>
                 <div className="detail-row">
                   <span className="detail-key">Status:</span>
