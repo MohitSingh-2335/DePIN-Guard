@@ -10,6 +10,7 @@ if _backend_dir not in sys.path:
 import hashlib
 import hmac
 import json
+import math
 import random
 import requests as http_requests
 from contextlib import asynccontextmanager
@@ -125,7 +126,7 @@ system_state = {
         "accuracy": _default_metrics.get("lstm_accuracy", 82.4),
         "active_models_count": 2,
         "available_models": [
-            "PyTorch 4-Channel Temporal LSTM Autoencoder",
+            "PyTorch 6-Channel Temporal LSTM Autoencoder",
             "PyTorch DeviceGCN Graph Neural Network"
         ],
         "lstm_accuracy": _default_metrics.get("lstm_accuracy", 82.4),
@@ -159,7 +160,7 @@ async def _hydrate_system_state():
             system_state["ai"]["accuracy"] = ai_metrics.get("lstm_accuracy", 82.4)
             system_state["ai"]["active_models_count"] = 2
             system_state["ai"]["available_models"] = [
-                "PyTorch 4-Channel Temporal LSTM Autoencoder",
+                "PyTorch 6-Channel Temporal LSTM Autoencoder",
                 "PyTorch DeviceGCN Graph Neural Network"
             ]
             
@@ -193,8 +194,39 @@ async def _hydrate_system_state():
 
 
 async def _setup_system_state():
-    """Call _hydrate_system_state during startup"""
+    """Call _hydrate_system_state during startup and seed fleet devices"""
     await _hydrate_system_state()
+    if len(system_state["latest_by_device"]) < 33:
+        try:
+            from iot.data_ingestor import load_industrial_datasets
+            records = load_industrial_datasets()
+            for dev_idx in range(33):
+                dev_id = f"Device-{dev_idx:03d}"
+                rec = records[dev_idx % len(records)] if records else {
+                    "temperature": 22.5,
+                    "vibration": 1.2,
+                    "power_usage": 18.0,
+                    "current_avg": 0.12,
+                    "voltage_avg": 217.5,
+                    "pressure": 100.0,
+                }
+                system_state["latest_by_device"][dev_id] = {
+                    "id": dev_id,
+                    "device": dev_id,
+                    "temp": rec.get("temperature", 22.5),
+                    "vib": rec.get("vibration", 1.2),
+                    "pwr": rec.get("power_usage", 18.0),
+                    "pressure": rec.get("pressure", 100.0),
+                    "current_avg": rec.get("current_avg", 0.12),
+                    "voltage_avg": rec.get("voltage_avg", 217.5),
+                    "status": "normal",
+                    "loss": 0.05,
+                    "threshold": _ANOMALY_THRESHOLD,
+                    "confidence": 85.0,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+        except Exception as exc:
+            print(f"[SystemState] Fleet seed notice: {exc}")
 
 # ---------------------------------------------------------------------------
 # Blockchain integration (Optional — can run without Hyperledger Fabric)
@@ -217,13 +249,13 @@ try:
     sys.path.append(os.path.join(ROOT_DIR, "ai-service"))
     from gnn_model import DeviceGCN, build_factory_adjacency_matrix
     GNN_MODEL_PATH = os.path.join(ROOT_DIR, "ai-service", "gnn_model.pth")
-    gnn_model = DeviceGCN(in_features=4, hidden_dim=16, num_classes=2)
+    gnn_model = DeviceGCN(in_features=6, hidden_dim=16, num_classes=2)
     if os.path.exists(GNN_MODEL_PATH):
         gnn_model.load_state_dict(torch.load(GNN_MODEL_PATH, map_location="cpu"))
         gnn_model.eval()
         GNN_ACTIVE = True
         gnn_adj = build_factory_adjacency_matrix(33)
-        print("Graph Neural Network active: DeviceGCN loaded (Accuracy: 85.89%, Precision: 93.67%)")
+        print("Graph Neural Network active: DeviceGCN loaded (in_features=6)")
     else:
         GNN_ACTIVE = False
 except Exception as e:
@@ -404,6 +436,8 @@ class SensorData(BaseModel):
     vibration:   float
     power_usage: float
     pressure:    float = 0.0
+    current_avg: float = 0.12
+    voltage_avg: float = 217.5
     timestamp:   str
     signature:   str = ""
     
@@ -581,16 +615,28 @@ async def get_ai_analysis():
 
             results = []
             for i, a in enumerate(recent_anoms):
+                conf_val = a.get("confidence")
+                if conf_val is None or float(conf_val) == 0.0:
+                    loss_v = float(a.get("ai_loss", 0.0))
+                    thresh_v = float(a.get("ai_threshold", _ANOMALY_THRESHOLD))
+                    ratio_v = loss_v / thresh_v if thresh_v > 0 else 1.2
+                    conf_val = 50.0 + 49.5 * (1.0 - math.exp(-0.65 * max(0.0, ratio_v - 1.0)))
+                conf_float = float(conf_val)
+                if 0.0 < conf_float <= 1.0:
+                    conf_float = round(conf_float * 100.0, 1)
+
                 results.append({
                     "id": f"ai-{a.get('device_id', 'dev')}-{i}",
                     "device": a.get("device_id", "Unknown"),
                     "analysis_type": "Temporal Reconstruction",
-                    "severity": "high",
-                    "confidence": a.get("confidence", 95.0),
-                    "timestamp": a.get("timestamp", datetime.utcnow().strftime("%H:%M:%S")),
-                    "description": f"Sensor values (Temp: {a.get('temperature')} C, Vib: {a.get('vibration')}) exceeded anomaly threshold",
+                    "severity": a.get("severity", "high"),
+                    "confidence": round(conf_float, 1),
+                    "loss": round(float(a.get("ai_loss", 0.0)), 6),
+                    "threshold": round(float(a.get("ai_threshold", _ANOMALY_THRESHOLD)), 6),
+                    "timestamp": str(a.get("timestamp", datetime.now(timezone.utc).isoformat())),
+                    "description": a.get("description") or f"Sensor values (Temp: {a.get('temperature')} C, Vib: {a.get('vibration')} mm/s) exceeded anomaly threshold",
                     "recommendation": a.get("recommendation") or "Check cooling circuit and verify vibration damper.",
-                    "model_name": "PyTorch 4-Channel Temporal LSTM Autoencoder"
+                    "model_name": "PyTorch 6-Channel Temporal LSTM Autoencoder"
                 })
 
             return {
@@ -599,7 +645,7 @@ async def get_ai_analysis():
                 "accuracy": ai_metrics.get("lstm_accuracy", 82.4),
                 "active_models_count": 2,
                 "available_models": [
-                    "PyTorch 4-Channel Temporal LSTM Autoencoder",
+                    "PyTorch 6-Channel Temporal LSTM Autoencoder",
                     "PyTorch DeviceGCN Graph Neural Network"
                 ],
                 "lstm_accuracy": ai_metrics.get("lstm_accuracy", 82.4),
@@ -641,6 +687,19 @@ async def get_history():
             if not raw_hash:
                 raw_hash = hashlib.sha256(f"{dev_id}:{ts}:{doc.get('temperature', 0)}".encode()).hexdigest()
 
+            loss_val = float(doc.get("ai_loss", doc.get("loss", 0.0)))
+            thresh_val = float(doc.get("ai_threshold", doc.get("threshold", _ANOMALY_THRESHOLD)))
+            conf_val = doc.get("confidence")
+            if conf_val is None or float(conf_val) == 0.0:
+                if is_anom:
+                    ratio_v = loss_val / thresh_val if thresh_val > 0 else 1.2
+                    conf_val = 50.0 + 49.5 * (1.0 - math.exp(-0.65 * max(0.0, ratio_v - 1.0)))
+                else:
+                    conf_val = 85.0
+            conf_float = float(conf_val)
+            if 0.0 < conf_float <= 1.0:
+                conf_float = round(conf_float * 100.0, 1)
+
             transformed = {
                 "id": doc_id,
                 "device": dev_id,
@@ -652,6 +711,13 @@ async def get_history():
                 "vib": doc.get("vibration", 0),
                 "pwr": doc.get("power_usage", 0),
                 "pressure": doc.get("pressure", 0),
+                "current_avg": doc.get("current_avg", 0.12),
+                "voltage_avg": doc.get("voltage_avg", 217.5),
+                "loss": round(loss_val, 6),
+                "threshold": round(thresh_val, 6),
+                "confidence": round(conf_float, 1),
+                "severity": doc.get("severity", "critical" if is_anom else "low"),
+                "description": doc.get("description", ""),
                 "anomaly": 1 if is_anom else 0,
                 "ai_source": doc.get("ai_source", "lstm_autoencoder"),
                 "ai_error": doc.get("ai_error", ""),
@@ -699,6 +765,19 @@ async def get_all_history():
             if not raw_hash:
                 raw_hash = hashlib.sha256(f"{dev_id}:{ts}:{doc.get('temperature', 0)}".encode()).hexdigest()
 
+            loss_val = float(doc.get("ai_loss", doc.get("loss", 0.0)))
+            thresh_val = float(doc.get("ai_threshold", doc.get("threshold", _ANOMALY_THRESHOLD)))
+            conf_val = doc.get("confidence")
+            if conf_val is None or float(conf_val) == 0.0:
+                if is_anom:
+                    ratio_v = loss_val / thresh_val if thresh_val > 0 else 1.2
+                    conf_val = 50.0 + 49.5 * (1.0 - math.exp(-0.65 * max(0.0, ratio_v - 1.0)))
+                else:
+                    conf_val = 85.0
+            conf_float = float(conf_val)
+            if 0.0 < conf_float <= 1.0:
+                conf_float = round(conf_float * 100.0, 1)
+
             transformed = {
                 "id": doc_id,
                 "device": dev_id,
@@ -710,6 +789,13 @@ async def get_all_history():
                 "vib": doc.get("vibration", 0),
                 "pwr": doc.get("power_usage", 0),
                 "pressure": doc.get("pressure", 0),
+                "current_avg": doc.get("current_avg", 0.12),
+                "voltage_avg": doc.get("voltage_avg", 217.5),
+                "loss": round(loss_val, 6),
+                "threshold": round(thresh_val, 6),
+                "confidence": round(conf_float, 1),
+                "severity": doc.get("severity", "critical" if is_anom else "low"),
+                "description": doc.get("description", ""),
                 "anomaly": 1 if is_anom else 0,
                 "ai_source": doc.get("ai_source", "lstm_autoencoder"),
                 "ai_error": doc.get("ai_error", ""),
@@ -735,13 +821,17 @@ async def _execute_telemetry_pipeline(data: SensorData) -> dict:
         temperature=data.temperature,
         vibration=data.vibration,
         power_usage=data.power_usage,
-        pressure=data.pressure
+        pressure=data.pressure,
+        current_avg=getattr(data, "current_avg", 0.12),
+        voltage_avg=getattr(data, "voltage_avg", 217.5)
     )
     is_anomaly = bool(ai_result.get("is_anomaly", False))
     recommendation = ai_result.get("recommendation", "Normal Operation")
+    description = ai_result.get("description", "")
     loss_val = float(ai_result.get("loss", 0.0))
     threshold_val = float(ai_result.get("threshold", _ANOMALY_THRESHOLD))
-    confidence_val = float(ai_result.get("confidence", 95.0))
+    confidence_val = float(ai_result.get("confidence", 85.0))
+    severity_val = ai_result.get("severity", "critical" if is_anomaly else "low")
     ai_source = "in_memory_lstm"
 
     # Track latest reading per device
@@ -752,7 +842,13 @@ async def _execute_telemetry_pipeline(data: SensorData) -> dict:
         "vib": data.vibration,
         "pwr": data.power_usage,
         "pressure": data.pressure,
+        "current_avg": getattr(data, "current_avg", 0.12),
+        "voltage_avg": getattr(data, "voltage_avg", 217.5),
         "status": "critical" if is_anomaly else "normal",
+        "loss": loss_val,
+        "threshold": threshold_val,
+        "confidence": confidence_val,
+        "severity": severity_val,
         "timestamp": data.timestamp,
     }
 
@@ -762,9 +858,17 @@ async def _execute_telemetry_pipeline(data: SensorData) -> dict:
         temperature=data.temperature,
         vibration=data.vibration,
         power_usage=data.power_usage,
+        current_avg=getattr(data, "current_avg", 0.12),
+        voltage_avg=getattr(data, "voltage_avg", 217.5),
         pressure=data.pressure,
         is_anomaly=is_anomaly,
         status="critical" if is_anomaly else "normal",
+        ai_loss=loss_val,
+        ai_threshold=threshold_val,
+        confidence=confidence_val,
+        severity=severity_val,
+        description=description,
+        recommendation=recommendation,
     )
     await save_sensor_data(sensor_doc)
 
@@ -789,11 +893,17 @@ async def _execute_telemetry_pipeline(data: SensorData) -> dict:
         "temperature":  data.temperature,
         "vibration":    data.vibration,
         "power_usage":  data.power_usage,
+        "current_avg":  getattr(data, "current_avg", 0.12),
+        "voltage_avg":  getattr(data, "voltage_avg", 217.5),
         "pressure":     data.pressure,
         "is_anomaly":   is_anomaly,
+        "loss":         loss_val,
+        "threshold":    threshold_val,
+        "confidence":   confidence_val,
+        "severity":     severity_val,
         "status":       "critical" if is_anomaly else "normal",
         "status_short": data.status_short or ("Operating normally" if not is_anomaly else "Abnormal reading detected"),
-        "timestamp":    datetime.now().isoformat(),
+        "timestamp":    datetime.now(timezone.utc).isoformat(),
         "total_scans":  system_state["dashboard"]["total_scans"],
         "anomalies":    system_state["dashboard"]["anomalies"],
     })
@@ -804,14 +914,20 @@ async def _execute_telemetry_pipeline(data: SensorData) -> dict:
         fraud_alert = FraudAlertModel(
             device_id=data.device_id,
             alert_type="anomaly",
-            severity="high",
-            message=recommendation,
+            severity=severity_val,
+            message=description or recommendation,
+            confidence=confidence_val,
             anomaly_data={
                 "temperature": data.temperature,
                 "vibration": data.vibration,
                 "power_usage": data.power_usage,
-                "ai_loss": ai_result.get("loss"),
-                "ai_threshold": ai_result.get("threshold"),
+                "current_avg": getattr(data, "current_avg", 0.12),
+                "voltage_avg": getattr(data, "voltage_avg", 217.5),
+                "pressure": data.pressure,
+                "ai_loss": loss_val,
+                "ai_threshold": threshold_val,
+                "confidence": confidence_val,
+                "recommendation": recommendation,
             }
         )
         await save_fraud_alert(fraud_alert)
@@ -852,8 +968,8 @@ async def _execute_telemetry_pipeline(data: SensorData) -> dict:
             "device":         data.device_id,
             "recommendation": recommendation,
             "timestamp":      datetime.now().strftime("%H:%M:%S"),
-            "severity":       "high",
-            "model_name":     "PyTorch 4-Channel Temporal LSTM Autoencoder",
+            "severity":       severity_val,
+            "model_name":     "PyTorch 6-Channel Temporal LSTM Autoencoder",
             "loss":           loss_val,
             "threshold":      threshold_val,
         }
@@ -865,7 +981,7 @@ async def _execute_telemetry_pipeline(data: SensorData) -> dict:
         # --- Write to Hyperledger Fabric ---
         if BLOCKCHAIN_ACTIVE:
             try:
-                feature_keys_json = json.dumps(["temperature", "vibration", "power_usage"])
+                feature_keys_json = json.dumps(["temperature", "vibration", "power_usage", "current_avg", "voltage_avg", "pressure"])
                 anomaly_score     = str(round(
                     ai_result.get("anomaly_score", ai_result.get("loss", 0.0)), 6
                 ))
@@ -919,7 +1035,7 @@ async def autonomous_feeder_loop():
         print("[AutonomousFeeder] Feeder disabled via AUTONOMOUS_FEEDER=false")
         return
 
-    interval = float(os.getenv("FEEDER_INTERVAL_SECONDS", "2.0"))
+    interval = float(os.getenv("FEEDER_INTERVAL_SECONDS", "5.0"))
     try:
         from iot.data_ingestor import load_industrial_datasets, DEVICES, format_status
         records = load_industrial_datasets()
@@ -950,6 +1066,8 @@ async def autonomous_feeder_loop():
                 vibration=rec["vibration"],
                 power_usage=rec["power_usage"],
                 pressure=rec.get("pressure", 0.0),
+                current_avg=rec.get("current_avg", 0.12),
+                voltage_avg=rec.get("voltage_avg", 217.5),
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 machine_name=meta.get("machine_name", "Industrial Machine"),
                 status_short=meta.get("status_short", "Machine operating within safe parameters"),
