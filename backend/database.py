@@ -1,8 +1,11 @@
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
+
+def utc_now():
+    return datetime.now(timezone.utc)
 
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 load_dotenv(os.path.join(ROOT_DIR, ".env"))
@@ -80,10 +83,18 @@ class SensorDataModel(BaseModel):
     temperature: float
     vibration: float
     power_usage: float
+    current_avg: float = 0.12
+    voltage_avg: float = 217.5
     pressure: Optional[float] = None
     is_anomaly: bool = False
     status: str = "normal"
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    ai_loss: float = 0.0
+    ai_threshold: float = 0.0
+    confidence: float = 0.0
+    severity: str = "low"
+    description: str = ""
+    recommendation: str = ""
+    timestamp: datetime = Field(default_factory=utc_now)
 
     class Config:
         json_encoders = {datetime: lambda v: v.isoformat()}
@@ -96,7 +107,8 @@ class AnomalyResultModel(BaseModel):
     status: str
     loss: float
     threshold: float
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    confidence: float = 0.0
+    timestamp: datetime = Field(default_factory=utc_now)
 
 
 class FraudAlertModel(BaseModel):
@@ -104,8 +116,9 @@ class FraudAlertModel(BaseModel):
     alert_type: str
     severity: str
     message: str
+    confidence: float = 0.0
     anomaly_data: Optional[dict] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utc_now)
 
     class Config:
         json_encoders = {datetime: lambda v: v.isoformat()}
