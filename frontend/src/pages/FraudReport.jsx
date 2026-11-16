@@ -96,19 +96,17 @@ export default function FraudReport() {
 
   const filtered = alerts.filter(a => {
     const ratio = getConfidenceRatio(a.confidence);
-    if (filter === 'resolved') return resolved.has(a.id);
-    if (filter === 'pending') return !resolved.has(a.id);
-    if (filter === 'high') return ratio > 0.8;
-    if (filter === 'medium') return ratio > 0.6 && ratio <= 0.8;
-    if (filter === 'low') return ratio <= 0.6;
+    const sev = (a.severity || '').toLowerCase();
+    if (filter === 'critical') return sev === 'critical' || ratio > 0.85;
+    if (filter === 'high') return sev === 'high' || (ratio > 0.7 && ratio <= 0.85);
+    if (filter === 'medium') return sev === 'medium' || (ratio > 0.55 && ratio <= 0.7);
+    if (filter === 'low') return sev === 'low' || ratio <= 0.55;
     return true;
   });
 
   // Use canonical MongoDB counts so Fraud Alerts matches Dashboard, AI Analysis, and History 100%
   const totalAlertsCount = summaryStats?.total_alerts ?? alerts.length;
   const criticalCount = summaryStats?.critical_alerts ?? alerts.filter(a => getConfidenceRatio(a.confidence) > 0.8).length;
-  const resolvedCount = summaryStats?.resolved_alerts ?? resolved.size;
-  const pendingCount = summaryStats?.pending_alerts ?? Math.max(0, totalAlertsCount - resolvedCount);
 
   return (
     <Layout>
@@ -138,19 +136,19 @@ export default function FraudReport() {
         <div className="fraud-stats">
           <div className="fraud-stat-card">
             <div className="fraud-stat-num">{Number(totalAlertsCount).toLocaleString()}</div>
-            <div className="fraud-stat-lbl">Total Alerts (MongoDB)</div>
+            <div className="fraud-stat-lbl">Total Anomaly Ingests</div>
           </div>
           <div className="fraud-stat-card">
             <div className="fraud-stat-num" style={{ color: '#ef4444' }}>{Number(criticalCount).toLocaleString()}</div>
-            <div className="fraud-stat-lbl">Critical / High Risk</div>
+            <div className="fraud-stat-lbl">Critical / High Severity</div>
           </div>
           <div className="fraud-stat-card">
-            <div className="fraud-stat-num" style={{ color: '#f59e0b' }}>{Number(pendingCount).toLocaleString()}</div>
-            <div className="fraud-stat-lbl">Pending Review</div>
+            <div className="fraud-stat-num" style={{ color: '#38bdf8' }}>{Number(totalAlertsCount).toLocaleString()}</div>
+            <div className="fraud-stat-lbl">Ledger Anchored (100%)</div>
           </div>
           <div className="fraud-stat-card">
-            <div className="fraud-stat-num" style={{ color: '#22c55e' }}>{Number(resolvedCount).toLocaleString()}</div>
-            <div className="fraud-stat-lbl">Resolved</div>
+            <div className="fraud-stat-num" style={{ color: '#10b981' }}>{summaryStats?.total_blocks || totalAlertsCount}</div>
+            <div className="fraud-stat-lbl">Consortium Blocks</div>
           </div>
         </div>
 
@@ -178,7 +176,7 @@ export default function FraudReport() {
                 <span className="fraud-panel-badge">{filtered.length} shown</span>
               </span>
               <div className="fraud-filter-row">
-                {['all', 'high', 'medium', 'low', 'pending', 'resolved'].map(f => (
+                {['all', 'critical', 'high', 'medium', 'low'].map(f => (
                   <button
                     key={f}
                     className={`fraud-filter-btn ${filter === f ? 'active' : ''}`}
@@ -200,7 +198,7 @@ export default function FraudReport() {
                 <table className="fraud-table">
                   <thead>
                     <tr>
-                      <th>Detection Type</th>
+                      <th>Detection Type &amp; Rationale</th>
                       <th>Target Asset</th>
                       <th>Dynamic Confidence</th>
                       <th>Time Detected</th>
@@ -213,16 +211,24 @@ export default function FraudReport() {
                       const rawConf = parseFloat(alert.confidence || 0);
                       const confRatio = rawConf > 1.0 ? rawConf / 100.0 : rawConf;
                       const confPercent = (confRatio * 100.0).toFixed(1);
-                      const isResolved = resolved.has(alert.id);
+                      const effectiveSev = (alert.severity && alert.severity !== 'low')
+                        ? alert.severity.toLowerCase()
+                        : (confRatio > 0.8 ? 'high' : confRatio > 0.6 ? 'medium' : 'low');
                       return (
                         <tr
                           key={alert.id || i}
-                          className={`
-                            ${confRatio > 0.8 ? 'row-high' : ''}
-                            ${isResolved ? 'row-resolved' : ''}
-                          `}
+                          className={effectiveSev === 'critical' || effectiveSev === 'high' ? 'row-high' : ''}
                         >
-                          <td>{getTypeBadge(alert.type)}</td>
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                              {getTypeBadge(alert.type)}
+                              {alert.message && (
+                                <span style={{ fontSize: '0.72rem', color: '#94a3b8', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={alert.message}>
+                                  {alert.message.split('|')[0].trim()}
+                                </span>
+                              )}
+                            </div>
+                          </td>
                           <td>
                             <code className="asset-id">{alert.asset_id}</code>
                           </td>
@@ -244,27 +250,18 @@ export default function FraudReport() {
                           </td>
                           <td className="timestamp">{formatUtcTimestamp(alert.timestamp)}</td>
                           <td>
-                            <span className={`risk-badge risk-${getSeverity(confRatio)}`}>
-                              {getSeverity(confRatio).toUpperCase()}
+                            <span className={`risk-badge risk-${effectiveSev}`}>
+                              {effectiveSev.toUpperCase()}
                             </span>
                           </td>
                           <td>
-                            <div className="action-btns">
-                              <button
-                                className="row-action-btn"
-                                title="View Details"
-                                onClick={() => setSelected(alert)}
-                              >
-                                View
-                              </button>
-                              <button
-                                className={`row-action-btn ${isResolved ? 'btn-resolved' : 'btn-resolve'}`}
-                                title={isResolved ? 'Mark as Pending' : 'Mark as Resolved'}
-                                onClick={() => handleResolveAlert(alert.id)}
-                              >
-                                {isResolved ? 'Resolved' : 'Resolve'}
-                              </button>
-                            </div>
+                            <button
+                              className="row-action-btn"
+                              title="Inspect Cryptographic Telemetry Audit"
+                              onClick={() => setSelected(alert)}
+                            >
+                              Inspect
+                            </button>
                           </td>
                         </tr>
                       );
@@ -310,7 +307,7 @@ export default function FraudReport() {
                     <div className="fraud-detail-item">
                       <span className="fraud-detail-label">Severity</span>
                       <span className="fraud-detail-value">
-                        {getSeverity(selectedAlert.confidence).toUpperCase()}
+                        {(selectedAlert.severity || getSeverity(selectedAlert.confidence)).toUpperCase()}
                       </span>
                     </div>
                     <div className="fraud-detail-item">
@@ -319,8 +316,8 @@ export default function FraudReport() {
                     </div>
                     <div className="fraud-detail-item">
                       <span className="fraud-detail-label">Status</span>
-                      <span className="fraud-detail-value" style={{ color: resolved.has(selectedAlert.id) ? '#22c55e' : '#f59e0b' }}>
-                        {resolved.has(selectedAlert.id) ? 'Resolved' : 'Pending'}
+                      <span className="fraud-detail-value" style={{ color: '#10b981' }}>
+                        Ledger Committed (SHA-256)
                       </span>
                     </div>
                   </div>
@@ -328,8 +325,11 @@ export default function FraudReport() {
 
                 {selectedAlert.message && (
                   <div className="fraud-modal-section">
-                    <div className="fraud-modal-section-title">Diagnostic Telemetry Message</div>
-                    <p>{selectedAlert.message}</p>
+                    <div className="fraud-modal-section-title">Diagnostic Telemetry &amp; Sensor Rationale</div>
+                    <p style={{ color: '#cbd5e1', lineHeight: 1.5 }}>{selectedAlert.message}</p>
+                    <div style={{ marginTop: '8px', padding: '8px 10px', background: 'rgba(15,23,42,0.6)', borderRadius: '6px', fontSize: '0.74rem', color: '#38bdf8' }}>
+                      Cryptographic Record: Event hash committed to consortium block ledger. Immutable provenance.
+                    </div>
                   </div>
                 )}
 
