@@ -456,9 +456,10 @@ const DashboardPage = () => {
                   temperature={Number(data.value)}
                   vibration={Number(data.vib)}
                   power_usage={Number(data.pwr)}
+                  pressure={Number(data.pressure || 0)}
                   recommendations={
                     data.status === 'critical'
-                      ? ['Stop machine immediately and alert maintenance team', 'Check cooling system and ventilation', 'Do not restart until temperature drops below 70°C']
+                      ? ['Stop machine immediately and alert maintenance team', 'Check cooling system and ventilation', 'Do not restart until temperature drops below safe limits']
                       : data.status === 'warning'
                         ? ['Schedule inspection within the next 2 hours', 'Check cooling system for blockages', 'Reduce machine load if possible']
                         : ['Continue normal operation', 'Next scheduled maintenance on time', 'All telemetry within nominal thresholds']
