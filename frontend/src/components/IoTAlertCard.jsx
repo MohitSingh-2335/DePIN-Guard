@@ -9,6 +9,7 @@ const IoTAlertCard = ({
   temperature = 0,
   vibration = 0,
   power_usage = 0,
+  pressure = 0,
   recommendations = [],
   timestamp = null,
 }) => {
@@ -20,6 +21,7 @@ const IoTAlertCard = ({
         </svg>
       ),
       borderColor: '#10b981',
+      badgeClass: 'badge-normal',
       badgeText: 'NORMAL',
       instruction: 'Continue normal operation. No action needed.',
     },
@@ -30,6 +32,7 @@ const IoTAlertCard = ({
         </svg>
       ),
       borderColor: '#f59e0b',
+      badgeClass: 'badge-warning',
       badgeText: 'WARNING',
       instruction: 'Monitor closely. Check sensor telemetry if trend continues.',
     },
@@ -40,6 +43,7 @@ const IoTAlertCard = ({
         </svg>
       ),
       borderColor: '#ef4444',
+      badgeClass: 'badge-danger',
       badgeText: 'CRITICAL',
       instruction: 'IMMEDIATE ACTION REQUIRED. Inspect machine and alert maintenance.',
     },
@@ -47,43 +51,42 @@ const IoTAlertCard = ({
 
   const config = alertConfig[alert_level] || alertConfig.normal;
 
-  const formatTime = (ts) => {
-    if (!ts) return 'N/A';
-    try { return new Date(ts).toLocaleTimeString(); }
-    catch { return 'N/A'; }
-  };
-
   const categorizeReading = (label, value, unit, normalRange) => {
     const { min, max } = normalRange;
     const num = Number(value);
     const concerning = isNaN(num) || num < min || num > max;
     return {
-      category:  concerning ? 'concerning' : 'normal',
+      category: concerning ? 'concerning' : 'normal',
       indicator: concerning ? '!' : '✓',
-      label, value, unit,
+      label,
+      value: isNaN(num) ? value : num.toFixed(2),
+      unit,
     };
   };
 
   const getStatusForMetric = (metric, value) => {
     const ranges = {
-      temperature: { min: 20.5, max: 25.0 },
-      vibration:   { min: 0.0,  max: 3.1  },
-      power_usage: { min: 0.0,  max: 48.5 },
+      temperature: { min: 20.5, max: 25.0, unit: '°C' },
+      vibration: { min: 0.0, max: 3.10, unit: 'mm/s' },
+      power_usage: { min: 0.0, max: 4.90, unit: 'kW' },
+      pressure: { min: 30.0, max: 185.0, unit: 'bar' },
     };
-    const units = { temperature: '°C', vibration: 'mm/s', power_usage: 'kW' };
-    return categorizeReading(metric, value, units[metric], ranges[metric] || { min: 0, max: 100 });
+    const rangeConfig = ranges[metric] || { min: 0, max: 100, unit: '' };
+    return categorizeReading(metric, value, rangeConfig.unit, rangeConfig);
   };
 
   const readings = [
     getStatusForMetric('temperature', temperature),
-    getStatusForMetric('vibration',   vibration),
+    getStatusForMetric('vibration', vibration),
     getStatusForMetric('power_usage', power_usage),
+    getStatusForMetric('pressure', pressure),
   ];
 
   return (
-    <div className={`iot-alert-card iot-alert-card--${alert_level}`}
-         style={{ borderLeftColor: config.borderColor }}>
-
+    <div
+      className={`iot-alert-card iot-alert-card--${alert_level}`}
+      style={{ borderLeftColor: config.borderColor }}
+    >
       {/* Header */}
       <div className="iot-header">
         <div className="iot-title-section">
@@ -93,7 +96,7 @@ const IoTAlertCard = ({
             <p className="iot-device-id">{device_id}</p>
           </div>
         </div>
-        <span className="iot-badge" style={{ backgroundColor: config.borderColor }}>
+        <span className={`status-badge ${config.badgeClass}`}>
           {config.badgeText}
         </span>
       </div>
@@ -104,26 +107,36 @@ const IoTAlertCard = ({
         <p className="iot-instruction">{config.instruction}</p>
       </div>
 
-      {/* Readings */}
+      {/* Readings - 2x2 Grid */}
       <div className="iot-readings-grid">
         {readings.map((reading) => (
-          <div key={reading.label}
-               className={`iot-reading-card iot-reading-card--${reading.category}`}>
+          <div
+            key={reading.label}
+            className={`iot-reading-card iot-reading-card--${reading.category}`}
+          >
             <div className="iot-reading-indicator">{reading.indicator}</div>
             <p className="iot-reading-label">{reading.label}</p>
             <p className="iot-reading-value">
               {reading.value}
               <span className="iot-reading-unit">{reading.unit}</span>
             </p>
-            <p className="iot-reading-status">{reading.category}</p>
+            <span
+              className={`status-badge ${
+                reading.category === 'normal' ? 'badge-normal' : 'badge-warning'
+              }`}
+            >
+              {reading.category}
+            </span>
           </div>
         ))}
       </div>
 
-      {/* Recommendations */}
-      {recommendations && recommendations.length > 0 && (
-        <div className="iot-recommendations"
-             style={{ borderLeftColor: config.borderColor }}>
+      {/* Recommendations - Only render when alert_level !== 'normal' */}
+      {alert_level !== 'normal' && recommendations && recommendations.length > 0 && (
+        <div
+          className="iot-recommendations"
+          style={{ borderLeftColor: config.borderColor }}
+        >
           <h4 className="iot-recommendations-title">Recommended Actions:</h4>
           <ol className="iot-recommendations-list">
             {recommendations.map((rec, idx) => (
