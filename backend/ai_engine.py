@@ -1,12 +1,18 @@
 import os
+import json
+import gc
 from collections import defaultdict, deque
-import joblib
 import numpy as np
 import torch
 import torch.nn as nn
 
 # Limit PyTorch CPU threads to minimize RAM and CPU spikes on free-tier containers
 torch.set_num_threads(1)
+try:
+    torch.set_num_interop_threads(1)
+except Exception:
+    pass
+torch.set_grad_enabled(False)
 
 
 def resolve_ai_service_dir() -> str:
@@ -38,6 +44,7 @@ class AnomalyDetector:
     def __init__(self, model_path: str = None, scaler_path: str = None, threshold_path: str = None):
         base_dir = resolve_ai_service_dir()
         self.model_path = model_path or os.path.join(base_dir, "lstm_autoencoder.pth")
+        self.scaler_params_path = os.path.join(base_dir, "scaler_params.json")
         self.scaler_path = scaler_path or os.path.join(base_dir, "scaler.save")
         self.threshold_path = threshold_path or os.path.join(base_dir, "threshold.txt")
 
@@ -46,10 +53,18 @@ class AnomalyDetector:
             self.model.load_state_dict(torch.load(self.model_path, map_location=torch.device("cpu")))
         self.model.eval()
 
-        if os.path.exists(self.scaler_path):
-            self.scaler = joblib.load(self.scaler_path)
-        else:
-            self.scaler = None
+        # Lightweight vector scaler (zero dependency on scikit-learn or joblib)
+        self.scale = np.array([0.25062657, 0.35335689, 0.20618557, 0.07862872, 0.19193858, 0.00620424], dtype=np.float32)
+        self.min_val = np.array([-5.2406015, -0.03886926, 0.0, 0.0, -41.103645, -0.12079662], dtype=np.float32)
+
+        if os.path.exists(self.scaler_params_path):
+            try:
+                with open(self.scaler_params_path, "r", encoding="utf-8") as f:
+                    params = json.load(f)
+                    self.scale = np.array(params["scale"], dtype=np.float32)
+                    self.min_val = np.array(params["min"], dtype=np.float32)
+            except Exception:
+                pass
 
         self.threshold = 0.205
         if os.path.exists(self.threshold_path):
@@ -61,6 +76,7 @@ class AnomalyDetector:
 
         self.buffers = defaultdict(lambda: deque(maxlen=30))
         self.channel_names = ["temperature", "vibration", "power_usage", "current_avg", "voltage_avg", "pressure"]
+        gc.collect()
 
     def predict(
         self,
@@ -72,19 +88,16 @@ class AnomalyDetector:
         current_avg: float = 0.12,
         voltage_avg: float = 217.5
     ) -> dict:
-        raw_reading = np.array([[
+        raw_reading = np.array([
             float(temperature),
             float(vibration),
             float(power_usage),
             float(current_avg),
             float(voltage_avg),
             float(pressure)
-        ]])
+        ], dtype=np.float32)
 
-        if self.scaler is not None:
-            scaled_reading = self.scaler.transform(raw_reading)[0]
-        else:
-            scaled_reading = np.array([0.5, 0.5, 0.5, 0.5, 0.5, 0.5])
+        scaled_reading = raw_reading * self.scale + self.min_val
 
         device_buf = self.buffers[device_id]
         device_buf.append(scaled_reading)
@@ -95,7 +108,7 @@ class AnomalyDetector:
 
         tensor_seq = torch.tensor(np.array(seq), dtype=torch.float32).unsqueeze(0)
 
-        with torch.no_grad():
+        with torch.inference_mode():
             reconstruction = self.model(tensor_seq)
             # Evaluate reconstruction loss specifically on the latest incoming reading
             step_loss = torch.mean((tensor_seq[:, -1, :] - reconstruction[:, -1, :]) ** 2).item()
