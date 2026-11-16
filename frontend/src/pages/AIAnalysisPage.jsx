@@ -73,7 +73,7 @@ const AIAnalysisPage = () => {
 
   useEffect(() => {
     fetchAIData();
-    const interval = setInterval(fetchAIData, 5000);
+    const interval = setInterval(fetchAIData, 6000);
     return () => clearInterval(interval);
   }, []);
 
