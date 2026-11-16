@@ -5,20 +5,25 @@ import './HistoryPage.css';
 
 // --- Helper: UTC Time Formatting ---
 const formatTimestamp = (timestamp) => {
-  if (!timestamp) return '---';
+  if (!timestamp) return 'N/A';
   try {
-    let clean = String(timestamp).trim();
-    if (!clean.endsWith('Z') && !clean.includes('+')) {
-      clean += 'Z';
+    let s = String(timestamp).trim();
+    if (s.includes(' ') && !s.includes('+') && !s.endsWith('Z')) {
+      s = s.replace(' ', 'T') + 'Z';
+    } else if (!s.includes('T') && !s.includes('+') && !s.endsWith('Z')) {
+      s += 'Z';
     }
-    const date = new Date(clean);
-    if (isNaN(date.getTime())) return String(timestamp);
-    const now = new Date();
-    const diffInSeconds = Math.floor((now - date) / 1000);
-    
-    if (diffInSeconds >= 0 && diffInSeconds < 60) return 'Just now';
-    if (diffInSeconds >= 0 && diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' · ' + date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    const d = new Date(s);
+    if (isNaN(d.getTime())) return String(timestamp);
+    return d.toLocaleString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    });
   } catch {
     return String(timestamp);
   }
@@ -26,6 +31,7 @@ const formatTimestamp = (timestamp) => {
 
 const HistoryPage = () => {
   const [historyData, setHistoryData] = useState([]);
+  const [totals, setTotals]           = useState({ scans: null, anomalies: null, normal: null });
   const [loading, setLoading]         = useState(true);
   const [searchTerm, setSearchTerm]   = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -40,6 +46,11 @@ const HistoryPage = () => {
         const data = await res.json();
         if (data && Array.isArray(data.history)) {
           setHistoryData(data.history);
+          setTotals({
+            scans: data.total_scans ?? data.history.length,
+            anomalies: data.total_anomalies ?? data.history.filter(r => r.anomaly === 1 || r.status === 'critical').length,
+            normal: data.total_normal ?? Math.max(0, (data.total_scans ?? data.history.length) - (data.total_anomalies ?? 0)),
+          });
         }
       }
     } catch (error) {
@@ -111,18 +122,20 @@ const HistoryPage = () => {
         <div className="history-stats-grid">
           <div className="stat-card">
             <span className="stat-label">Total Verified Records</span>
-            <span className="stat-value">{historyData.length}</span>
+            <span className="stat-value">
+              {totals.scans !== null ? Number(totals.scans).toLocaleString() : historyData.length}
+            </span>
           </div>
           <div className="stat-card">
             <span className="stat-label">Critical Anomaly Logs</span>
             <span className="stat-value text-danger">
-              {historyData.filter(h => h.status === 'critical' || h.anomaly === 1).length}
+              {totals.anomalies !== null ? totals.anomalies : historyData.filter(h => h.status === 'critical' || h.anomaly === 1).length}
             </span>
           </div>
           <div className="stat-card">
             <span className="stat-label">Optimal Machine Scans</span>
             <span className="stat-value text-success">
-              {historyData.filter(h => h.status === 'verified' || h.status === 'normal').length}
+              {totals.normal !== null ? Number(totals.normal).toLocaleString() : historyData.filter(h => h.status === 'verified' || h.status === 'normal').length}
             </span>
           </div>
         </div>
