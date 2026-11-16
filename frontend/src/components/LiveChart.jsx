@@ -62,7 +62,16 @@ const CustomStreamTooltip = ({ active, payload }) => {
 };
 
 export default function LiveChart({ onConnect, onData, initialData = [] }) {
-  const [data, setData] = useState([]);
+  const [data, setData] = useState(() => {
+    try {
+      const cached = localStorage.getItem('depin_recent_frames');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return [];
+  });
   const [streamMode, setStreamMode] = useState('connecting');
   const [expanded, setExpanded] = useState(false);
   const [chartMetric, setChartMetric] = useState('temp');
@@ -152,6 +161,15 @@ export default function LiveChart({ onConnect, onData, initialData = [] }) {
       setData(seeded);
     }
   }, [initialData, data.length]);
+
+  // Persist recent rolling frames to localStorage cache so page refresh never resets to empty
+  useEffect(() => {
+    if (data.length > 0) {
+      try {
+        localStorage.setItem('depin_recent_frames', JSON.stringify(data.slice(-MAX_POINTS)));
+      } catch {}
+    }
+  }, [data]);
 
   // Primary WebSocket + Resilient HTTP Fallback
   useEffect(() => {
@@ -305,9 +323,9 @@ export default function LiveChart({ onConnect, onData, initialData = [] }) {
           <span className="strip-note">Industrial SCADA Rate</span>
         </div>
         <div className="strip-item">
-          <span className="strip-label">Session Stream Frames</span>
-          <span className="strip-value purple">{packetCount > 0 ? packetCount : data.length}</span>
-          <span className="strip-note">MongoDB Persisted</span>
+          <span className="strip-label">Recent Frame Buffer</span>
+          <span className="strip-value purple">{data.length} / {MAX_POINTS}</span>
+          <span className="strip-note">MongoDB Synchronized</span>
         </div>
       </div>
 
