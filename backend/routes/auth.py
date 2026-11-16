@@ -5,7 +5,7 @@ from typing import Optional
 import jwt
 import bcrypt
 from dotenv import load_dotenv
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
@@ -45,7 +45,9 @@ class UserLogin(BaseModel):
 
 class ProfileUpdate(BaseModel):
     full_name: Optional[str] = None
+    email: Optional[str] = None
     phone: Optional[str] = None
+    bio: Optional[str] = None
     email_notifications: Optional[bool] = None
     sms_notifications: Optional[bool] = None
     alert_notifications: Optional[bool] = None
@@ -115,6 +117,7 @@ async def signup(user: UserSignup):
             "password_hash": hashed,
             "full_name": full_name,
             "phone": user.phone,
+            "bio": "",
             "created_at": datetime.now(timezone.utc).isoformat(),
             "last_login": None,
             "settings": {}
@@ -129,6 +132,7 @@ async def signup(user: UserSignup):
             "password_hash": hashed,
             "full_name": full_name,
             "phone": user.phone,
+            "bio": "",
             "created_at": datetime.now(timezone.utc).isoformat(),
             "last_login": None,
             "settings": {}
@@ -198,6 +202,7 @@ async def get_profile(credentials: HTTPAuthorizationCredentials = Depends(bearer
             "email": db_user["email"],
             "full_name": db_user.get("full_name"),
             "phone": db_user.get("phone"),
+            "bio": db_user.get("bio", ""),
             "created_at": db_user.get("created_at"),
             "last_login": db_user.get("last_login"),
             "settings": db_user.get("settings", {})
@@ -223,10 +228,14 @@ async def update_profile(update_data: ProfileUpdate, credentials: HTTPAuthorizat
         updates["full_name"] = update_data.full_name
     if update_data.phone is not None:
         updates["phone"] = update_data.phone
+    if update_data.bio is not None:
+        updates["bio"] = update_data.bio
 
     settings_updates = {}
-    for field in ["email_notifications", "sms_notifications", "alert_notifications",
-                  "auto_refresh", "refresh_interval", "data_retention", "theme", "language"]:
+    for field in [
+        "email_notifications", "sms_notifications", "alert_notifications",
+        "auto_refresh", "refresh_interval", "data_retention", "theme", "language"
+    ]:
         val = getattr(update_data, field)
         if val is not None:
             settings_updates[field] = val
@@ -239,10 +248,20 @@ async def update_profile(update_data: ProfileUpdate, credentials: HTTPAuthorizat
     if updates:
         if mongo_db is not None:
             await mongo_db["users"].update_one({"_id": db_user["_id"]}, {"$set": updates})
+            db_user.update(updates)
         else:
             db_user.update(updates)
 
-    return {"message": "Profile updated successfully"}
+    return {
+        "message": "Profile updated successfully",
+        "profile": {
+            "email": db_user["email"],
+            "full_name": db_user.get("full_name"),
+            "phone": db_user.get("phone"),
+            "bio": db_user.get("bio", ""),
+            "settings": db_user.get("settings", {}),
+        }
+    }
 
 
 class ChangePassword(BaseModel):
@@ -279,3 +298,15 @@ async def change_password(data: ChangePassword, credentials: HTTPAuthorizationCr
         db_user["password_hash"] = new_hash
 
     return {"status": "success", "message": "Password updated successfully"}
+
+
+@router.delete("/profile")
+@router.delete("/api/profile")
+async def delete_profile(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
+    email = verify_jwt_token(credentials.credentials)
+    mongo_db = db_module.db
+    if mongo_db is not None:
+        await mongo_db["users"].delete_one({"email": email})
+    else:
+        fallback_users.pop(email, None)
+    return {"status": "success", "message": "Account deleted permanently"}
