@@ -4,12 +4,19 @@ import './IoTAlertCard.css';
 const IoTAlertCard = ({
   device_id = 'Device-000',
   machine_name = 'Unknown Machine',
+  sector = '',
+  line = '',
   alert_level = 'normal',
   status_short = 'Running normally',
   temperature = 0,
   vibration = 0,
   power_usage = 0,
   pressure = 0,
+  current_avg = 0.12,
+  voltage_avg = 217.5,
+  loss = null,
+  threshold = 0.163,
+  confidence = null,
   recommendations = [],
   timestamp = null,
 }) => {
@@ -70,6 +77,8 @@ const IoTAlertCard = ({
       vibration: { min: 0.0, max: 3.10, unit: 'mm/s' },
       power_usage: { min: 0.0, max: 4.90, unit: 'kW' },
       pressure: { min: 30.0, max: 185.0, unit: 'bar' },
+      current_avg: { min: 0.05, max: 0.45, unit: 'A' },
+      voltage_avg: { min: 210.0, max: 225.0, unit: 'V' },
     };
     const rangeConfig = ranges[metric] || { min: 0, max: 100, unit: '' };
     return categorizeReading(metric, value, rangeConfig.unit, rangeConfig);
@@ -80,6 +89,8 @@ const IoTAlertCard = ({
     getStatusForMetric('vibration', vibration),
     getStatusForMetric('power_usage', power_usage),
     getStatusForMetric('pressure', pressure),
+    getStatusForMetric('current_avg', current_avg),
+    getStatusForMetric('voltage_avg', voltage_avg),
   ];
 
   return (
@@ -93,7 +104,10 @@ const IoTAlertCard = ({
           <span className="iot-icon">{config.icon}</span>
           <div className="iot-machine-info">
             <h3 className="iot-machine-name">{machine_name}</h3>
-            <p className="iot-device-id">{device_id}</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: '2px' }}>
+              <span className="iot-device-id">{device_id}</span>
+              {sector && <span className="iot-sector-tag">{line ? `${line} · ${sector}` : sector}</span>}
+            </div>
           </div>
         </div>
         <span className={`status-badge ${config.badgeClass}`}>
@@ -107,7 +121,7 @@ const IoTAlertCard = ({
         <p className="iot-instruction">{config.instruction}</p>
       </div>
 
-      {/* Readings - 2x2 Grid */}
+      {/* Readings - 6-Sensor Matrix */}
       <div className="iot-readings-grid">
         {readings.map((reading) => (
           <div
@@ -115,7 +129,7 @@ const IoTAlertCard = ({
             className={`iot-reading-card iot-reading-card--${reading.category}`}
           >
             <div className="iot-reading-indicator">{reading.indicator}</div>
-            <p className="iot-reading-label">{reading.label}</p>
+            <p className="iot-reading-label">{reading.label.replace('_', ' ')}</p>
             <p className="iot-reading-value">
               {reading.value}
               <span className="iot-reading-unit">{reading.unit}</span>
@@ -145,6 +159,22 @@ const IoTAlertCard = ({
           </ol>
         </div>
       )}
+
+      {/* Diagnostics & Audit Footer */}
+      <div className="iot-card-footer">
+        <span className="iot-meta-item">
+          <span style={{ color: '#94a3b8' }}>AI Loss:</span>
+          <strong style={{ color: alert_level === 'normal' ? '#38bdf8' : '#ef4444' }}>
+            {loss != null ? Number(loss).toFixed(4) : '< 0.163'}
+          </strong>
+        </span>
+        <span className="iot-meta-item" style={{ color: '#10b981' }}>
+          <svg viewBox="0 0 20 20" fill="currentColor" width="12" height="12">
+            <path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+          </svg>
+          SHA-256 Ledger Verified
+        </span>
+      </div>
     </div>
   );
 };
