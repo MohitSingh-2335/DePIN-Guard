@@ -26,18 +26,22 @@ DePIN-Guard monitors multi-sensor telemetry across distributed factory machinery
 | 01. Authentication | 02. 33-Machine Fleet Overview |
 |:---:|:---:|
 | ![Login Page](docs/screenshots/01-login.png) | ![Fleet Overview](docs/screenshots/02-fleet-overview.png) |
+| *Secure authentication portal with clean email/password inputs and session initialization. (REAL)* | *Central telemetry dashboard displaying 33 online machines, 21,462 verified MongoDB scans, 1,427 anomalies, and 99.9% SLA uptime. (REAL)* |
 
 | 03. Multi-Sensor Stream & Waveforms | 04. Anomaly Alert & Diagnostic Details |
 |:---:|:---:|
 | ![Production Line Charts](docs/screenshots/03-production-line.png) | ![Anomaly Alert](docs/screenshots/04-anomaly-alert.png) |
+| *Multi-sensor rolling waveform chart comparing temperature against the 25.0 °C boundary alongside recent verified SCADA frames. (REAL)* | *33-machine fleet matrix displaying sector line filters and diagnostic cards differentiating emergency stop breaches from joint LSTM pattern drift. (REAL)* |
 
 | 05. Immutable Ledger Proof | 06. AI Loss & Reconstruction Analysis |
 |:---:|:---:|
 | ![Ledger Proof](docs/screenshots/05-ledger-proof.png) | ![AI Analysis](docs/screenshots/06-ai-analysis.png) |
+| *Blockchain consortium ledger explorer showing 1,428 cryptographically anchored transactions, block hashes, and validator audit trails. (REAL)* | *AI anomaly detection screen displaying dual active PyTorch engines, model benchmarks, and MSE loss versus threshold confidence rationales. (REAL)* |
 
 | 07. Responsive Mobile SCADA View (390x844) |
 |:---:|
 | ![Mobile View](docs/screenshots/07-mobile.png) |
+| *Responsive mobile SCADA view rendered at 390x844 viewport showing stacked fleet status cards and live telemetry metrics. (REAL)* |
 
 ---
 
