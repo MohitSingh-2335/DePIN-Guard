@@ -2,18 +2,16 @@ import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import Layout from '../components/layout/Layout';
 import { authFetch } from '../utils/authApi';
+import { authenticatedFetch, formatUtcTimestamp } from '../utils/api';
 import { clearAuthStorage, storeUserProfile } from '../utils/sessionAuth';
 import './SettingsPage.css';
 
-/* ─────────────────────────────────────────
-   Constants
-───────────────────────────────────────── */
 const NAV_GROUPS = [
   {
     group: 'Account',
     items: [
-      { id: 'profile',       label: 'Profile',       icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' },
-      { id: 'security',      label: 'Security',      icon: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z' },
+      { id: 'profile', label: 'Profile', icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' },
+      { id: 'security', label: 'Security', icon: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z' },
       { id: 'notifications', label: 'Notifications', icon: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9' },
     ],
   },
@@ -21,7 +19,7 @@ const NAV_GROUPS = [
     group: 'Preferences',
     items: [
       { id: 'appearance', label: 'Appearance', icon: 'M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01' },
-      { id: 'devices',    label: 'Devices',    icon: 'M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18' },
+      { id: 'devices', label: 'Devices', icon: 'M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18' },
     ],
   },
 ];
@@ -35,16 +33,37 @@ const DEFAULT_SETTINGS = {
   weeklyDigest: true,
   securityAlerts: true,
   autoRefresh: true,
-  refreshInterval: '30',
+  refreshInterval: '6',
   dataRetention: '90',
   theme: 'dark',
   language: 'en',
   density: 'comfortable',
 };
 
-/* ─────────────────────────────────────────
-   Reusable small components
-───────────────────────────────────────── */
+const detectBrowserDevice = () => {
+  if (typeof navigator === 'undefined') return 'Web Browser Session';
+  const ua = navigator.userAgent || '';
+  const browser = ua.includes('Edg')
+    ? 'Microsoft Edge'
+    : ua.includes('Chrome')
+    ? 'Google Chrome'
+    : ua.includes('Firefox')
+    ? 'Mozilla Firefox'
+    : ua.includes('Safari')
+    ? 'Apple Safari'
+    : 'Web Browser';
+  const os = ua.includes('Win')
+    ? 'Windows'
+    : ua.includes('Mac')
+    ? 'macOS'
+    : ua.includes('Linux')
+    ? 'Linux'
+    : ua.includes('Android')
+    ? 'Android'
+    : 'OS';
+  return `${browser} on ${os}`;
+};
+
 const Toggle = ({ checked, onChange, disabled = false }) => (
   <label className={`sp-toggle${disabled ? ' sp-toggle--disabled' : ''}`}>
     <input
@@ -75,26 +94,23 @@ const Icon = ({ d }) => (
   </svg>
 );
 
-/* ─────────────────────────────────────────
-   Main Page
-───────────────────────────────────────── */
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('profile');
-  const [settings, setSettings]   = useState(DEFAULT_SETTINGS);
-  const [original, setOriginal]   = useState(null);
-  const [isSaving, setIsSaving]   = useState(false);
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [original, setOriginal] = useState(null);
+  const [lastLogin, setLastLogin] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [pw, setPw]               = useState({ current: '', newPass: '', confirm: '', show: false });
-  const [pwMsg, setPwMsg]         = useState(null);
+  const [pw, setPw] = useState({ current: '', newPass: '', confirm: '', show: false });
+  const [pwMsg, setPwMsg] = useState(null);
 
-  /* ── Load on mount ── */
   useEffect(() => {
     const load = async () => {
       const savedPrefs = (() => {
         try { return JSON.parse(localStorage.getItem('iot-settings') || '{}'); } catch { return {}; }
       })();
       const email = localStorage.getItem('userEmail') || '';
-      const name  = localStorage.getItem('userName')  || '';
+      const name = localStorage.getItem('userName') || '';
 
       let profileData = {};
       try {
@@ -103,16 +119,28 @@ export default function SettingsPage() {
           const { profile = {} } = await res.json();
           profileData = profile;
           storeUserProfile(profile);
+          if (profile.last_login) setLastLogin(profile.last_login);
         }
-      } catch { /* backend sleeping — use localStorage */ }
+      } catch {
+        // Fallback to localStorage if offline
+      }
 
+      const remoteSettings = profileData.settings || {};
       const merged = {
         ...DEFAULT_SETTINGS,
         ...savedPrefs,
+        emailNotifications: remoteSettings.email_notifications ?? savedPrefs.emailNotifications ?? true,
+        smsNotifications: remoteSettings.sms_notifications ?? savedPrefs.smsNotifications ?? false,
+        alertNotifications: remoteSettings.alert_notifications ?? savedPrefs.alertNotifications ?? true,
+        autoRefresh: remoteSettings.auto_refresh ?? savedPrefs.autoRefresh ?? true,
+        refreshInterval: String(remoteSettings.refresh_interval ?? savedPrefs.refreshInterval ?? '6'),
+        dataRetention: String(remoteSettings.data_retention ?? savedPrefs.dataRetention ?? '90'),
+        theme: remoteSettings.theme ?? savedPrefs.theme ?? 'dark',
+        language: remoteSettings.language ?? savedPrefs.language ?? 'en',
         fullName: profileData.full_name || savedPrefs.fullName || name || '',
-        email:    profileData.email     || savedPrefs.email    || email || '',
-        phone:    profileData.phone     || savedPrefs.phone    || '',
-        bio:      profileData.bio       || savedPrefs.bio      || '',
+        email: profileData.email || savedPrefs.email || email || '',
+        phone: profileData.phone || savedPrefs.phone || '',
+        bio: profileData.bio || savedPrefs.bio || '',
       };
 
       setSettings(merged);
@@ -122,7 +150,6 @@ export default function SettingsPage() {
     load();
   }, []);
 
-  /* ── Theme: instant apply ── */
   useEffect(() => {
     const root = document.documentElement;
     if (settings.theme === 'auto') {
@@ -134,7 +161,6 @@ export default function SettingsPage() {
     }
   }, [settings.theme]);
 
-  /* ── Density: instant apply ── */
   useEffect(() => {
     document.documentElement.setAttribute('data-density', settings.density);
   }, [settings.density]);
@@ -142,44 +168,49 @@ export default function SettingsPage() {
   const hasChanges = original !== null && JSON.stringify(settings) !== JSON.stringify(original);
   const set = useCallback((k, v) => setSettings(p => ({ ...p, [k]: v })), []);
 
-  /* ── Save ── */
   const handleSave = async () => {
     setIsSaving(true);
-    // Save locally first (always works)
     localStorage.setItem('iot-settings', JSON.stringify(settings));
-    if (settings.fullName) localStorage.setItem('userName',  settings.fullName);
-    if (settings.email)    localStorage.setItem('userEmail', settings.email);
+    if (settings.fullName) localStorage.setItem('userName', settings.fullName);
+    if (settings.email) localStorage.setItem('userEmail', settings.email);
 
     try {
       const res = await authFetch('/profile', {
         method: 'POST',
         body: JSON.stringify({
           full_name: settings.fullName,
-          email:     settings.email,
-          phone:     settings.phone,
-          bio:       settings.bio,
+          email: settings.email,
+          phone: settings.phone,
+          bio: settings.bio,
+          email_notifications: settings.emailNotifications,
+          sms_notifications: settings.smsNotifications,
+          alert_notifications: settings.alertNotifications,
+          auto_refresh: settings.autoRefresh,
+          refresh_interval: String(settings.refreshInterval),
+          data_retention: String(settings.dataRetention),
+          theme: settings.theme,
+          language: settings.language,
         }),
       });
       if (!res.ok) throw new Error('Server error');
       const data = await res.json();
       storeUserProfile(data.profile || {});
       setOriginal({ ...settings });
-      toast.success('Settings saved!');
+      toast.success('Settings saved to MongoDB!');
     } catch {
       setOriginal({ ...settings });
-      toast('Saved locally - sync when backend is online.');
+      toast('Saved locally — will sync when backend is online.');
     } finally {
       setIsSaving(false);
     }
   };
 
-  /* ── Reset ── */
   const handleReset = () => {
     if (!window.confirm('Reset all settings to defaults?')) return;
     const def = {
       ...DEFAULT_SETTINGS,
-      fullName: localStorage.getItem('userName')  || '',
-      email:    localStorage.getItem('userEmail') || '',
+      fullName: localStorage.getItem('userName') || '',
+      email: localStorage.getItem('userEmail') || '',
     };
     setSettings(def);
     setOriginal(def);
@@ -187,7 +218,6 @@ export default function SettingsPage() {
     toast.success('Reset to defaults');
   };
 
-  /* ── Password ── */
   const handlePasswordChange = async () => {
     setPwMsg(null);
     if (!pw.current || !pw.newPass || !pw.confirm)
@@ -209,7 +239,7 @@ export default function SettingsPage() {
       if (!res.ok) {
         throw new Error(data.detail || 'Failed to update password');
       }
-      setPwMsg({ text: 'Password successfully updated!', type: 'success' });
+      setPwMsg({ text: 'Password successfully updated in MongoDB!', type: 'success' });
       setPw({ current: '', newPass: '', confirm: '', show: false });
       toast.success('Password changed successfully!');
     } catch (err) {
@@ -218,11 +248,26 @@ export default function SettingsPage() {
     }
   };
 
-  /* ── Delete account ── */
-  const handleDeleteAccount = () => {
-    if (!window.confirm('This will permanently delete your account. This CANNOT be undone.')) return;
+  const handleResetDeviceData = async () => {
+    if (!window.confirm('Reset all MongoDB sensor readings, anomaly alerts, and ledger blocks to zero? This cannot be undone.')) return;
+    try {
+      const res = await authenticatedFetch('/api/data/reset', { method: 'POST' });
+      if (!res || !res.ok) throw new Error('Failed to reset telemetry data');
+      toast.success('All MongoDB device telemetry and alerts have been reset!');
+    } catch (err) {
+      toast.error(err.message || 'Could not reset device data');
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!window.confirm('This will permanently delete your account from MongoDB. This CANNOT be undone.')) return;
     const typed = window.prompt('Type DELETE to confirm:');
     if (typed === 'DELETE') {
+      try {
+        await authFetch('/profile', { method: 'DELETE' });
+      } catch {
+        // Proceed with local cleanup even if backend unreachable
+      }
       clearAuthStorage();
       localStorage.clear();
       toast.success('Account deleted. Redirecting…');
@@ -232,11 +277,10 @@ export default function SettingsPage() {
     }
   };
 
-  /* ── Export / Import ── */
   const handleExport = () => {
     const blob = new Blob([JSON.stringify(settings, null, 2)], { type: 'application/json' });
-    const url  = URL.createObjectURL(blob);
-    const a    = Object.assign(document.createElement('a'), {
+    const url = URL.createObjectURL(blob);
+    const a = Object.assign(document.createElement('a'), {
       href: url,
       download: `depin-settings-${new Date().toISOString().split('T')[0]}.json`,
     });
@@ -254,7 +298,7 @@ export default function SettingsPage() {
         try {
           const parsed = JSON.parse(ev.target.result);
           setSettings(prev => ({ ...prev, ...parsed }));
-          toast('Settings imported - click Save to apply.');
+          toast('Settings imported - click Save changes to apply.');
         } catch { toast.error('Invalid JSON file.'); }
       };
       reader.readAsText(file);
@@ -262,26 +306,21 @@ export default function SettingsPage() {
     input.click();
   };
 
-  /* ── Initials ── */
   const initials = settings.fullName
     ? settings.fullName.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()
     : (settings.email?.[0] || 'U').toUpperCase();
 
-  /* ── Loading ── */
   if (isLoading) {
     return (
       <Layout>
         <div className="sp-loading">
           <div className="sp-loading-pulse" />
-          <p>Loading settings…</p>
+          <p>Loading settings from MongoDB…</p>
         </div>
       </Layout>
     );
   }
 
-  /* ══════════════════════════════════════
-     RENDER
-  ══════════════════════════════════════ */
   return (
     <Layout>
       <div className="sp-root">
@@ -306,7 +345,6 @@ export default function SettingsPage() {
                   >
                     <Icon d={icon} />
                     {label}
-                    {/* unsaved badge */}
                     {hasChanges && activeTab === id && (
                       <span className="sp-nav-dot" title="Unsaved changes" />
                     )}
@@ -332,7 +370,7 @@ export default function SettingsPage() {
               <h1 className="sp-page-title">
                 {NAV_GROUPS.flatMap(g => g.items).find(n => n.id === activeTab)?.label ?? 'Settings'}
               </h1>
-              <p className="sp-page-sub">Manage your account and preferences</p>
+              <p className="sp-page-sub">Manage your account and MongoDB-persisted preferences</p>
             </div>
             <div className="sp-topbar-actions">
               <button className="sp-btn-ghost" onClick={handleReset}>Reset defaults</button>
@@ -355,17 +393,13 @@ export default function SettingsPage() {
               <div className="sp-card">
                 <div className="sp-card-head">
                   <h2>Personal information</h2>
-                  <p>Your name and contact details</p>
+                  <p>Your name and contact details stored in MongoDB</p>
                 </div>
                 <div className="sp-avatar-row">
                   <div className="sp-avatar-xl">{initials}</div>
                   <div>
                     <p className="sp-avatar-name">{settings.fullName || 'No name set'}</p>
-                    <p className="sp-avatar-hint">PNG or JPG, max 2 MB</p>
-                    <button className="sp-btn-ghost sp-btn-sm"
-                      onClick={() => toast('Photo upload coming soon!')}>
-                      Change photo
-                    </button>
+                    <p className="sp-avatar-hint">{settings.email || 'Authenticated Operator'}</p>
                   </div>
                 </div>
                 <div className="sp-fields-grid">
@@ -389,14 +423,12 @@ export default function SettingsPage() {
                       onChange={e => set('language', e.target.value)}>
                       <option value="en">English</option>
                       <option value="hi">Hindi</option>
-                      <option value="es">Spanish</option>
-                      <option value="fr">French</option>
                     </select>
                   </Field>
                   <Field label="Bio" hint="optional">
                     <textarea className="sp-textarea" rows={3} value={settings.bio}
                       onChange={e => set('bio', e.target.value)}
-                      placeholder="Short bio about your role…" />
+                      placeholder="AI Detection Subsystem Lead — DePIN-Guard Capstone" />
                   </Field>
                 </div>
               </div>
@@ -409,13 +441,13 @@ export default function SettingsPage() {
               <div className="sp-card">
                 <div className="sp-card-head">
                   <h2>Change password</h2>
-                  <p>Use a strong password you don't use elsewhere</p>
+                  <p>Updates your bcrypt password hash directly in MongoDB</p>
                 </div>
                 <div className="sp-fields-grid sp-fields-single">
                   {[
-                    { label: 'Current password',    key: 'current', ph: 'Enter current password' },
-                    { label: 'New password',         key: 'newPass', ph: 'Minimum 8 characters'   },
-                    { label: 'Confirm new password', key: 'confirm', ph: 'Re-enter new password'  },
+                    { label: 'Current password', key: 'current', ph: 'Enter current password' },
+                    { label: 'New password', key: 'newPass', ph: 'Minimum 8 characters' },
+                    { label: 'Confirm new password', key: 'confirm', ph: 'Re-enter new password' },
                   ].map(({ label, key, ph }) => (
                     <Field key={key} label={label}>
                       <input
@@ -445,29 +477,19 @@ export default function SettingsPage() {
 
               <div className="sp-card">
                 <div className="sp-card-head">
-                  <h2>Active sessions</h2>
-                  <p>Devices currently signed in to your account</p>
+                  <h2>Active JWT session</h2>
+                  <p>Verified browser session currently signed in to your account</p>
                 </div>
-                {[
-                  { device: 'Chrome on Windows', location: 'Mumbai, IN', time: 'Active now',  active: true  },
-                  { device: 'Safari on iPhone',  location: 'Delhi, IN',  time: '2 days ago',  active: false },
-                  { device: 'Firefox on macOS',  location: 'Pune, IN',   time: '5 days ago',  active: false },
-                ].map((s, i) => (
-                  <div key={i} className="sp-session-row">
-                    <span className={`sp-session-dot${s.active ? '' : ' inactive'}`} />
-                    <div className="sp-session-info">
-                      <p>{s.device}</p>
-                      <span>{s.location} · {s.time}</span>
-                    </div>
-                    {s.active
-                      ? <span className="sp-badge-active">This device</span>
-                      : <button className="sp-btn-ghost sp-btn-sm sp-btn-danger-ghost"
-                          onClick={() => toast.success(`Session on ${s.device} revoked.`)}>
-                          Revoke
-                        </button>
-                    }
+                <div className="sp-session-row">
+                  <span className="sp-session-dot" />
+                  <div className="sp-session-info">
+                    <p>{detectBrowserDevice()}</p>
+                    <span>
+                      {settings.email || 'Authenticated Operator'} · {lastLogin ? `Last login: ${formatUtcTimestamp(lastLogin)}` : 'Active now'}
+                    </span>
                   </div>
-                ))}
+                  <span className="sp-badge-active">Current session</span>
+                </div>
               </div>
             </div>
           )}
@@ -481,10 +503,10 @@ export default function SettingsPage() {
                   <p>Choose how you want to receive notifications</p>
                 </div>
                 {[
-                  { label: 'Email notifications', desc: 'Summaries and updates via email',           field: 'emailNotifications' },
-                  { label: 'SMS notifications',   desc: 'Text message alerts to your phone',          field: 'smsNotifications'   },
-                  { label: 'Weekly digest',        desc: 'Activity summary sent every Monday',         field: 'weeklyDigest'       },
-                  { label: 'Security alerts',      desc: 'Login attempts and access notifications',    field: 'securityAlerts'     },
+                  { label: 'Email notifications', desc: 'Summaries and updates via email', field: 'emailNotifications' },
+                  { label: 'SMS notifications', desc: 'Text message alerts to your phone', field: 'smsNotifications' },
+                  { label: 'Weekly digest', desc: 'Activity summary sent every Monday', field: 'weeklyDigest' },
+                  { label: 'Security alerts', desc: 'Login attempts and access notifications', field: 'securityAlerts' },
                 ].map(({ label, desc, field }) => (
                   <div key={field} className="sp-toggle-row">
                     <div>
@@ -509,9 +531,9 @@ export default function SettingsPage() {
                 </div>
                 <div className="sp-alert-level-group">
                   {[
-                    { value: 'all',  label: 'All alerts',  desc: 'Low, medium, and high severity' },
-                    { value: 'high', label: 'High only',   desc: 'Only critical alerts'            },
-                    { value: 'none', label: 'No alerts',   desc: 'Mute all device alerts'          },
+                    { value: 'all', label: 'All alerts', desc: 'Low, medium, and high severity' },
+                    { value: 'high', label: 'High only', desc: 'Only critical alerts' },
+                    { value: 'none', label: 'No alerts', desc: 'Mute all device alerts' },
                   ].map(opt => (
                     <label
                       key={opt.value}
@@ -562,9 +584,9 @@ export default function SettingsPage() {
                 </div>
                 <div className="sp-theme-grid">
                   {[
-                    { value: 'dark',  label: 'Dark',   desc: 'Easy on the eyes' },
-                    { value: 'light', label: 'Light',  desc: 'Clean and bright' },
-                    { value: 'auto',  label: 'System', desc: 'Follows your OS' },
+                    { value: 'dark', label: 'Dark', desc: 'Easy on the eyes' },
+                    { value: 'light', label: 'Light', desc: 'Clean and bright' },
+                    { value: 'auto', label: 'System', desc: 'Follows your OS' },
                   ].map(t => (
                     <button
                       key={t.value}
@@ -611,12 +633,12 @@ export default function SettingsPage() {
               <div className="sp-card">
                 <div className="sp-card-head">
                   <h2>Data refresh</h2>
-                  <p>Control how often device data is pulled</p>
+                  <p>Controls polling cadence across Dashboard, AI Analysis, History, Fraud Alerts &amp; Blockchain</p>
                 </div>
                 <div className="sp-toggle-row">
                   <div>
                     <p className="sp-toggle-label">Auto refresh</p>
-                    <p className="sp-toggle-desc">Automatically fetch latest device data</p>
+                    <p className="sp-toggle-desc">Automatically fetch latest device data from MongoDB</p>
                   </div>
                   <Toggle
                     checked={settings.autoRefresh}
@@ -631,10 +653,10 @@ export default function SettingsPage() {
                     <select className="sp-select" value={settings.refreshInterval}
                       onChange={e => set('refreshInterval', e.target.value)}
                       disabled={!settings.autoRefresh}>
+                      <option value="6">Every 6 seconds (Industrial Live)</option>
                       <option value="10">Every 10 seconds</option>
                       <option value="30">Every 30 seconds</option>
                       <option value="60">Every 1 minute</option>
-                      <option value="300">Every 5 minutes</option>
                     </select>
                   </Field>
                   <Field label="Data retention">
@@ -670,15 +692,11 @@ export default function SettingsPage() {
               <div className="sp-card sp-card--danger">
                 <div className="sp-card-head">
                   <h2 style={{ color: '#ef4444' }}>Danger zone</h2>
-                  <p>Irreversible actions — proceed with caution</p>
+                  <p>Irreversible MongoDB operations — proceed with caution</p>
                 </div>
                 <div className="sp-export-row">
-                  <button className="sp-btn-danger"
-                    onClick={() => {
-                      if (window.confirm('Reset ALL device data? This cannot be undone.'))
-                        toast.success('Device data reset.');
-                    }}>
-                    Reset device data
+                  <button className="sp-btn-danger" onClick={handleResetDeviceData}>
+                    Reset MongoDB telemetry data
                   </button>
                   <button className="sp-btn-danger" onClick={handleDeleteAccount}>
                     Delete account
