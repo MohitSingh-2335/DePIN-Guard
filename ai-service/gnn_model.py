@@ -22,10 +22,10 @@ class GraphConvolution(nn.Module):
 class DeviceGCN(nn.Module):
     """
     2-Layer Graph Convolutional Network for industrial machine correlation.
-    Inputs: 33 factory machines with 4 physical sensor features.
+    Inputs: 33 factory machines with 6 physical sensor features.
     Outputs: 2 classes (Normal=0, Anomaly=1) for each machine.
     """
-    def __init__(self, in_features: int = 4, hidden_dim: int = 16, num_classes: int = 2):
+    def __init__(self, in_features: int = 6, hidden_dim: int = 16, num_classes: int = 2):
         super().__init__()
         self.gc1 = GraphConvolution(in_features, hidden_dim)
         self.gc2 = GraphConvolution(hidden_dim, num_classes)
@@ -68,8 +68,8 @@ def build_factory_adjacency_matrix(num_devices: int = 33) -> torch.Tensor:
 if __name__ == "__main__":
     # Self-test
     adj = build_factory_adjacency_matrix(33)
-    x = torch.randn(33, 4)
-    model = DeviceGCN(in_features=4, hidden_dim=16, num_classes=2)
+    x = torch.randn(33, 6)
+    model = DeviceGCN(in_features=6, hidden_dim=16, num_classes=2)
     model.eval()
     with torch.no_grad():
         out = model(x, adj)
