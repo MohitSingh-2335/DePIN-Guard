@@ -66,6 +66,18 @@
   font-family: monospace;
 }
 
+.iot-sector-tag {
+  display: inline-block;
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: #38bdf8;
+  background: rgba(14, 165, 233, 0.1);
+  border: 1px solid rgba(14, 165, 233, 0.25);
+  padding: 1px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.2px;
+}
+
 .iot-badge {
   font-size: 0.62rem;
   font-weight: 700;
@@ -129,19 +141,25 @@
 /* ── Readings Grid ── */
 .iot-readings-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 0.6rem;
-  margin-bottom: 0.875rem;
-  padding: 0.75rem 0;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  padding: 0.65rem 0;
   border-top:    1px solid rgba(255,255,255,0.06);
   border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+@media (max-width: 580px) {
+  .iot-readings-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 .iot-reading-card {
   background: rgba(255,255,255,0.04);
   border: 1px solid rgba(255,255,255,0.07);
   border-radius: 7px;
-  padding: 0.6rem 0.5rem;
+  padding: 0.55rem 0.4rem;
   text-align: center;
   transition: border-color 0.2s;
 }
@@ -152,21 +170,24 @@
 }
 
 .iot-reading-indicator {
-  font-size: 0.9rem;
-  margin-bottom: 3px;
+  font-size: 0.85rem;
+  margin-bottom: 2px;
 }
 
 .iot-reading-label {
-  font-size: 0.6rem;
+  font-size: 0.58rem;
   text-transform: uppercase;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.3px;
   color: #64748b;
   margin: 0 0 3px;
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .iot-reading-value {
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 700;
   margin: 2px 0;
   color: #f1f5f9;
@@ -218,6 +239,26 @@
   color: #94a3b8;
   line-height: 1.55;
   margin: 3px 0;
+}
+
+/* ── Diagnostics & Audit Footer ── */
+.iot-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  font-size: 0.68rem;
+  color: #64748b;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.iot-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 /* ── Footer hidden ── */
