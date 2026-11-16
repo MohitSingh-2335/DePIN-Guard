@@ -1,9 +1,8 @@
-import os
 import time
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ValidationError
-from database import db
+import database as db_mod
 
 router = APIRouter()
 
@@ -14,11 +13,12 @@ class AttackTestRequest(BaseModel):
 
 @router.get("/security/status")
 async def get_security_status():
-    """Returns active security defenses, STRIDE matrix, and live defense status"""
+    """Returns active security defenses, STRIDE matrix, and live defense status."""
     recent_challenges = []
-    if db is not None:
+    mongo_db = db_mod.db
+    if mongo_db is not None:
         try:
-            cursor = db["audit_logs"].find({"event": "SECURITY_ATTACK_CHALLENGE"}).sort("timestamp", -1).limit(5)
+            cursor = mongo_db["audit_logs"].find({"event": "SECURITY_ATTACK_CHALLENGE"}).sort("timestamp", -1).limit(5)
             recent_challenges = await cursor.to_list(length=5)
             for c in recent_challenges:
                 c["_id"] = str(c["_id"])
@@ -45,14 +45,12 @@ async def get_security_status():
 async def execute_attack_test(request: Request, payload: AttackTestRequest):
     """
     Executes real live defense checks across all 4 architectural layers
-    and measures actual microsecond execution latency.
+    without polluting production sensor_data or fraud_alerts collections.
     """
     target = payload.attack_type.lower()
     results = []
 
-    # ---------------------------------------------------------
     # 1. Bruteforce Defense Test (HMAC Identity Layer)
-    # ---------------------------------------------------------
     if target in ("bruteforce", "all"):
         t0 = time.perf_counter()
         try:
@@ -61,7 +59,7 @@ async def execute_attack_test(request: Request, payload: AttackTestRequest):
                 device_id="Attack-Test-Node",
                 temperature=22.5,
                 vibration=0.25,
-                power_usage=25.0,
+                power_usage=2.5,
                 pressure=120.0,
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 signature="00000000forgedsignature00000000"
@@ -86,12 +84,10 @@ async def execute_attack_test(request: Request, payload: AttackTestRequest):
             "latency_ms": latency,
         })
 
-    # ---------------------------------------------------------
     # 2. Ingestion Flood Defense Test (Rate Limiting Layer)
-    # ---------------------------------------------------------
     if target in ("flood", "all"):
         t0 = time.perf_counter()
-        from main import limiter, HAS_SLOWAPI
+        from main import HAS_SLOWAPI
         latency = round((time.perf_counter() - t0) * 1000, 2)
         results.append({
             "name": "Telemetry Flood & Replay Defense",
@@ -103,18 +99,16 @@ async def execute_attack_test(request: Request, payload: AttackTestRequest):
             "latency_ms": latency,
         })
 
-    # ---------------------------------------------------------
     # 3. Malformed Packet Injection Defense (Schema Layer)
-    # ---------------------------------------------------------
     if target in ("malformed", "all"):
         t0 = time.perf_counter()
         try:
             from main import SensorData
             SensorData.model_validate({
                 "device_id": "Attack-Test-Node",
-                "temperature": "DROP_TABLE_INJECTION",  # Invalid type: string instead of float
+                "temperature": "DROP_TABLE_INJECTION",
                 "vibration": 0.25,
-                "power_usage": 25.0,
+                "power_usage": 2.5,
                 "timestamp": "invalid_date_format"
             })
             status = "FAILED"
@@ -136,34 +130,20 @@ async def execute_attack_test(request: Request, payload: AttackTestRequest):
             "latency_ms": latency,
         })
 
-    # ---------------------------------------------------------
     # 4. SlowITE / Sensor Tampering (AI Layer & Blockchain)
-    # ---------------------------------------------------------
     if target in ("slowite", "injection", "all"):
         t0 = time.perf_counter()
-        from ai_engine import AnomalyDetector
-        detector = AnomalyDetector()
-        ai_res = detector.predict(
+        from main import anomaly_detector
+        ai_res = anomaly_detector.predict(
             device_id="Attack-Test-Node",
             temperature=27.5,
             vibration=4.8,
-            power_usage=65.0,
-            pressure=185.0
+            power_usage=6.5,
+            pressure=5.0
         )
+        # Clean temporary buffer for Attack-Test-Node so it never affects the 33 plant devices
+        anomaly_detector.buffers.pop("Attack-Test-Node", None)
         is_detected = ai_res.get("is_anomaly", True)
-
-        if db is not None:
-            try:
-                await db["fraud_alerts"].insert_one({
-                    "device_id": "Attack-Test-Node",
-                    "alert_type": "sensor_tampering_attack",
-                    "severity": "CRITICAL",
-                    "message": "AI model detected anomalous physical telemetry under live security challenge",
-                    "anomaly_data": ai_res,
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                })
-            except Exception:
-                pass
 
         latency = round((time.perf_counter() - t0) * 1000, 2)
         results.append({
@@ -172,14 +152,18 @@ async def execute_attack_test(request: Request, payload: AttackTestRequest):
             "defense_layer": "Layer 4: PyTorch LSTM Autoencoder & Blockchain Ledger",
             "status": "DETECTED_BY_AI" if is_detected else "FLAGGED",
             "http_status": 200,
-            "detail": f"AI Autoencoder detected out-of-bounds physical pattern (loss={ai_res.get('loss', 0.0):.4f} > threshold={ai_res.get('threshold', 0.155):.4f}, confidence={ai_res.get('confidence', 0.85):.2f}).",
+            "detail": (
+                f"AI Autoencoder detected out-of-bounds physical pattern "
+                f"(loss={ai_res.get('loss', 0.0):.4f} > threshold={ai_res.get('threshold', 0.205):.4f}, "
+                f"confidence={ai_res.get('confidence', 85.0):.1f}%)."
+            ),
             "latency_ms": latency,
         })
 
-    # Record test event to MongoDB audit log
-    if db is not None:
+    mongo_db = db_mod.db
+    if mongo_db is not None:
         try:
-            await db["audit_logs"].insert_one({
+            await mongo_db["audit_logs"].insert_one({
                 "event": "SECURITY_ATTACK_CHALLENGE",
                 "attack_target": target,
                 "tests_executed": len(results),
