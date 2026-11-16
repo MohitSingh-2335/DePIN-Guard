@@ -163,8 +163,9 @@ async def get_canonical_stats(fallback_state: Optional[dict] = None) -> dict:
             resolved_alerts = min(anomalies, resolved_alerts)
             pending_alerts = max(0, anomalies - resolved_alerts)
             normal_scans = max(0, total_scans - anomalies)
-            total_blocks = await db["blockchain_blocks"].count_documents({})
-            total_blocks = max(1, total_blocks)
+            raw_blocks = await db["blockchain_blocks"].count_documents({})
+            # Each committed block anchors an anomaly event plus genesis block
+            total_blocks = min(anomalies + 1, raw_blocks) if (anomalies > 0 and raw_blocks > 0) else max(1, raw_blocks)
             return {
                 "active_devices": 33,
                 "total_scans": total_scans,
