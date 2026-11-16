@@ -17,10 +17,10 @@
   ],
   "updated_at": "2026-11-16 09:02:58",
   "gnn_model_name": "PyTorch DeviceGCN Graph Neural Network",
-  "gnn_accuracy": 87.65,
-  "gnn_precision": 93.33,
-  "gnn_recall": 25.09,
-  "gnn_f1": 39.55,
+  "gnn_accuracy": 89.44,
+  "gnn_precision": 86.98,
+  "gnn_recall": 59.51,
+  "gnn_f1": 70.67,
   "gnn_tested_nodes": 3465,
-  "gnn_updated_at": "2026-11-16 01:09:50"
+  "gnn_updated_at": "2026-11-16 09:04:14"
 }
