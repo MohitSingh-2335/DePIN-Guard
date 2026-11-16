@@ -188,7 +188,7 @@ export default function SettingsPage() {
   };
 
   /* ── Password ── */
-  const handlePasswordChange = () => {
+  const handlePasswordChange = async () => {
     setPwMsg(null);
     if (!pw.current || !pw.newPass || !pw.confirm)
       return setPwMsg({ text: 'All fields are required.', type: 'error' });
@@ -196,7 +196,26 @@ export default function SettingsPage() {
       return setPwMsg({ text: 'Minimum 8 characters required.', type: 'error' });
     if (pw.newPass !== pw.confirm)
       return setPwMsg({ text: 'Passwords do not match.', type: 'error' });
-    setPwMsg({ text: 'Password update endpoint not yet enabled — contact admin.', type: 'warning' });
+
+    try {
+      const res = await authFetch('/change-password', {
+        method: 'POST',
+        body: JSON.stringify({
+          current_password: pw.current,
+          new_password: pw.newPass,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || 'Failed to update password');
+      }
+      setPwMsg({ text: 'Password successfully updated!', type: 'success' });
+      setPw({ current: '', newPass: '', confirm: '', show: false });
+      toast.success('Password changed successfully!');
+    } catch (err) {
+      setPwMsg({ text: err.message || 'Error updating password', type: 'error' });
+      toast.error(err.message || 'Password update failed');
+    }
   };
 
   /* ── Delete account ── */
