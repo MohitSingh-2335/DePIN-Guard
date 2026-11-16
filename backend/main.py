@@ -8,27 +8,25 @@ os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 os.environ["TORCH_NUM_THREADS"] = "1"
 
-import sys
 import asyncio
+import hashlib
+import hmac
+import json
+import math
+import tempfile
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from typing import Optional
 
 _backend_dir = os.path.dirname(os.path.abspath(__file__))
 if _backend_dir not in sys.path:
     sys.path.insert(0, _backend_dir)
 
-import hashlib
-import hmac
-import json
-import math
-import random
-import requests as http_requests
-from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from typing import Optional
-
 from fastapi import FastAPI, HTTPException, Security, status, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
+from dotenv import load_dotenv
 
 try:
     from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -52,16 +50,14 @@ try:
 except ImportError:
     BackgroundScheduler = None
 
-from dotenv import load_dotenv
-
 try:
     import jwt
 except ImportError:
     jwt = None
 
 from database import (
-    connect_to_mongo, close_mongo_connection, db, SensorDataModel, FraudAlertModel, 
-    save_sensor_data, save_fraud_alert, get_fraud_alerts, get_device_stats,
+    connect_to_mongo, close_mongo_connection, SensorDataModel, FraudAlertModel,
+    save_sensor_data, save_fraud_alert, get_canonical_stats,
     get_database_size, get_collection_stats, export_all_data
 )
 from routes.stream import broadcast_data, router as stream_router
@@ -78,9 +74,14 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 load_dotenv(os.path.join(ROOT_DIR, ".env"))
 
-API_KEY            = os.getenv("DEPIN_API_KEY")
-SECRET_KEY         = os.getenv("JWT_SECRET_KEY")
+API_KEY = os.getenv("DEPIN_API_KEY")
+SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 SENSOR_PAYLOAD_MAX_AGE_SECONDS = int(os.getenv("SENSOR_PAYLOAD_MAX_AGE_SECONDS", "86400"))
+
+if not SECRET_KEY:
+    raise RuntimeError("JWT_SECRET_KEY is required in .env before starting")
+if not API_KEY:
+    raise RuntimeError("DEPIN_API_KEY is required in root .env before starting")
 
 # Initialize in-memory AI engine
 from ai_engine import AnomalyDetector
@@ -107,26 +108,21 @@ def load_ai_metrics() -> dict:
 
 _default_metrics = load_ai_metrics()
 
-FRAUD_DB      = os.path.join(os.path.dirname(__file__), "data", "fraud_reports.json")
-KNOWN_DEVICES = ["Device-001", "Device-002", "Device-003", "Device-004", "Device-005"]
-
-if not SECRET_KEY:
-    raise RuntimeError("JWT_SECRET_KEY is required in .env before starting")
-
 # ---------------------------------------------------------------------------
-# In-memory state
+# In-memory fallback state (kept 100% synchronized with MongoDB)
 # ---------------------------------------------------------------------------
 system_state = {
     "dashboard": {
         "active_devices": 33,
-        "total_scans":    0,
-        "anomalies":      0,
-        "uptime":         100.0,
+        "total_scans": 0,
+        "anomalies": 0,
+        "normal_scans": 0,
+        "uptime": 100.0,
     },
     "blockchain": {
-        "total_blocks":   1,
-        "transactions":   1,
-        "recent_blocks":  [],
+        "total_blocks": 1,
+        "transactions": 1,
+        "recent_blocks": [],
     },
     "ai": {
         "total_analyses": 0,
@@ -147,52 +143,61 @@ system_state = {
 }
 
 
+def _compute_dynamic_confidence(doc: dict, is_anom: bool = True) -> float:
+    conf_val = doc.get("confidence")
+    if conf_val is not None:
+        try:
+            c = float(conf_val)
+            if 0.0 < c <= 1.0:
+                c = round(c * 100.0, 1)
+            if c not in (0.0, 95.0, 96.5, 92.0, 80.0):
+                return round(min(99.4, max(55.0, c)), 1)
+        except (ValueError, TypeError):
+            pass
+
+    loss_v = float(doc.get("ai_loss", doc.get("loss", 0.0)) or 0.0)
+    thresh_v = float(doc.get("ai_threshold", doc.get("threshold", _ANOMALY_THRESHOLD)) or _ANOMALY_THRESHOLD)
+    ratio_v = loss_v / max(thresh_v, 1e-6)
+    if is_anom:
+        raw_conf = 54.0 + 45.4 * (1.0 - math.exp(-0.75 * max(0.05, ratio_v - 1.0)))
+        return round(min(99.4, max(55.0, raw_conf)), 1)
+    raw_conf = 99.0 - 35.0 * min(1.0, ratio_v)
+    return round(min(99.2, max(62.0, raw_conf)), 1)
+
+
 async def _hydrate_system_state():
-    """Hydrate system state from MongoDB"""
-    from database import db as mongo_db, mongodb_client
-    
+    """Hydrate system state from MongoDB and clean any legacy hardcoded records."""
+    import database as db_mod
+    mongo_db = db_mod.db
+    mongodb_client = db_mod.mongodb_client
+
     try:
         if mongo_db is not None and mongodb_client is not None:
-            # Purge legacy corrupted/bad Atlas records
+            # 1. Purge legacy hardcoded or synthetic test documents so all collections match
             try:
                 await mongo_db["sensor_data"].delete_many({
                     "$or": [
+                        {"device_id": "Attack-Test-Node"},
                         {"confidence": {"$in": [95.0, 96.5, 92.0]}},
                         {
                             "is_anomaly": True,
-                            "temperature": {"$gte": 20.5, "$lte": 25.0},
-                            "vibration": {"$gte": 0.0, "$lte": 3.10},
-                            "power_usage": {"$gte": 0.0, "$lte": 4.90},
-                            "pressure": {"$gte": 30.0, "$lte": 185.0}
+                            "temperature": {"$gte": 20.8, "$lte": 24.95},
+                            "vibration": {"$gte": 0.0, "$lte": 3.08},
+                            "power_usage": {"$gte": 0.0, "$lte": 4.85},
+                            "pressure": {"$gte": 34.0, "$lte": 184.0}
                         }
                     ]
                 })
                 await mongo_db["fraud_alerts"].delete_many({
-                    "confidence": {"$in": [95.0, 96.5, 92.0]}
+                    "$or": [
+                        {"device_id": "Attack-Test-Node"},
+                        {"confidence": {"$in": [95.0, 96.5, 92.0]}},
+                    ]
                 })
             except Exception as purge_err:
                 print(f"[SystemState] Legacy cleanup notice: {purge_err}")
 
-            total_scans = await mongo_db["sensor_data"].count_documents({})
-            anom_count = await mongo_db["sensor_data"].count_documents({"$or": [{"is_anomaly": True}, {"status": "critical"}]})
-            devices = await mongo_db["sensor_data"].distinct("device_id")
-            ai_metrics = load_ai_metrics()
-            
-            system_state["dashboard"]["active_devices"] = len(devices) if devices else 33
-            system_state["dashboard"]["total_scans"] = total_scans
-            system_state["dashboard"]["anomalies"] = anom_count
-            system_state["dashboard"]["uptime"] = 99.9 if total_scans > 0 else 100.0
-            
-            system_state["ai"]["total_analyses"] = total_scans
-            system_state["ai"]["anomalies_found"] = anom_count
-            system_state["ai"]["accuracy"] = ai_metrics.get("lstm_accuracy", 82.4)
-            system_state["ai"]["active_models_count"] = 2
-            system_state["ai"]["available_models"] = [
-                "PyTorch 6-Channel Temporal LSTM Autoencoder",
-                "PyTorch DeviceGCN Graph Neural Network"
-            ]
-            
-            # Hydrate blockchain blocks
+            # 2. Ensure genesis block exists in blockchain_blocks
             block_count = await mongo_db["blockchain_blocks"].count_documents({})
             if block_count == 0:
                 genesis_block = {
@@ -201,7 +206,7 @@ async def _hydrate_system_state():
                     "hash": "0000000000000000000000000000000000000000000000000000000000000000",
                     "prev_hash": "0",
                     "merkle_root": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-                    "timestamp": "2026-01-01 00:00:00 UTC",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                     "device_id": "Fleet-Genesis",
                     "anomaly_score": 0.0,
                     "orgMSP": "OrdererMSP",
@@ -211,60 +216,121 @@ async def _hydrate_system_state():
                     "validator": "Consortium-Genesis-Authority"
                 }
                 await mongo_db["blockchain_blocks"].insert_one(genesis_block)
-                block_count = 1
 
-            system_state["blockchain"]["total_blocks"] = block_count
-            system_state["blockchain"]["transactions"] = block_count
-            recent_blocks = await mongo_db["blockchain_blocks"].find({}, {"_id": 0}).sort("index", -1).limit(10).to_list(10)
+            # 3. Hydrate canonical stats
+            c_stats = await get_canonical_stats(system_state)
+            ai_metrics = load_ai_metrics()
+
+            system_state["dashboard"]["active_devices"] = 33
+            system_state["dashboard"]["total_scans"] = c_stats["total_scans"]
+            system_state["dashboard"]["anomalies"] = c_stats["anomalies"]
+            system_state["dashboard"]["normal_scans"] = c_stats["normal_scans"]
+            system_state["dashboard"]["uptime"] = c_stats["uptime"]
+
+            system_state["ai"]["total_analyses"] = c_stats["total_scans"]
+            system_state["ai"]["anomalies_found"] = c_stats["anomalies"]
+            system_state["ai"]["accuracy"] = ai_metrics.get("lstm_accuracy", 82.4)
+            system_state["ai"]["lstm_accuracy"] = ai_metrics.get("lstm_accuracy", 82.4)
+            system_state["ai"]["gnn_accuracy"] = ai_metrics.get("gnn_accuracy", 87.65)
+            system_state["ai"]["gnn_precision"] = ai_metrics.get("gnn_precision", 93.33)
+
+            system_state["blockchain"]["total_blocks"] = c_stats["total_blocks"]
+            system_state["blockchain"]["transactions"] = c_stats["transactions"]
+            recent_blocks = await mongo_db["blockchain_blocks"].find({}, {"_id": 0}).sort("index", -1).limit(20).to_list(20)
             system_state["blockchain"]["recent_blocks"] = recent_blocks
-            
-            print(f"[SystemState] Hydrated: {total_scans} scans, {len(devices)} active devices, {block_count} blocks")
+
+            # 4. Hydrate latest telemetry per device directly from MongoDB
+            pipeline = [
+                {"$sort": {"timestamp": -1}},
+                {"$group": {"_id": "$device_id", "doc": {"$first": "$$ROOT"}}},
+            ]
+            latest_docs = await mongo_db["sensor_data"].aggregate(pipeline).to_list(length=50)
+            for item in latest_docs:
+                doc = item.get("doc", {})
+                dev_id = doc.get("device_id")
+                if not dev_id or not str(dev_id).startswith("Device-"):
+                    continue
+                is_anom = bool(doc.get("is_anomaly") or doc.get("status") == "critical")
+                ts_val = doc.get("timestamp", "")
+                ts_iso = ts_val.isoformat() if hasattr(ts_val, "isoformat") else str(ts_val)
+                system_state["latest_by_device"][dev_id] = {
+                    "id": str(doc.get("_id", dev_id)),
+                    "device": dev_id,
+                    "machine_name": doc.get("machine_name") or dev_id,
+                    "temp": float(doc.get("temperature", 22.5)),
+                    "vib": float(doc.get("vibration", 0.25)),
+                    "pwr": float(doc.get("power_usage", 2.5)),
+                    "pressure": float(doc.get("pressure") or 100.0),
+                    "current_avg": float(doc.get("current_avg") or 0.12),
+                    "voltage_avg": float(doc.get("voltage_avg") or 217.5),
+                    "status": "critical" if is_anom else "normal",
+                    "status_short": doc.get("status_short") or ("Abnormal reading detected" if is_anom else "Machine operating within safe parameters"),
+                    "recommendations": [doc.get("recommendation") or ("Inspect machine immediately" if is_anom else "Continue standard operation")],
+                    "loss": float(doc.get("ai_loss", 0.0)),
+                    "threshold": float(doc.get("ai_threshold", _ANOMALY_THRESHOLD)),
+                    "confidence": _compute_dynamic_confidence(doc, is_anom),
+                    "severity": doc.get("severity", "critical" if is_anom else "low"),
+                    "timestamp": ts_iso,
+                }
+
+            print(
+                f"[SystemState] Hydrated from MongoDB: {c_stats['total_scans']} scans, "
+                f"{c_stats['anomalies']} anomalies, {len(system_state['latest_by_device'])} devices, "
+                f"{c_stats['total_blocks']} blocks"
+            )
         else:
-            print("[SystemState] MongoDB not available!")
+            print("[SystemState] MongoDB not connected; using local in-memory state.")
     except Exception as e:
-        print(f"[SystemState] Notice: {e}")
+        print(f"[SystemState] Hydration notice: {e}")
 
 
 async def _setup_system_state():
-    """Call _hydrate_system_state during startup and seed fleet devices"""
+    """Hydrate from MongoDB and ensure all 33 factory machines have initial real CSV telemetry."""
     await _hydrate_system_state()
     if len(system_state["latest_by_device"]) < 33:
         try:
-            from iot.data_ingestor import load_industrial_datasets
-            records = load_industrial_datasets(start_ts_offset=275, max_timestamps=50)
+            from iot.data_ingestor import load_industrial_datasets, MACHINE_NAMES
+            records = load_industrial_datasets(start_ts_offset=275, max_timestamps=60)
             for dev_idx in range(33):
                 dev_id = f"Device-{dev_idx:03d}"
-                rec = records[dev_idx % len(records)] if records else {
-                    "temperature": 22.5,
-                    "vibration": 1.2,
-                    "power_usage": 2.89,
-                    "current_avg": 0.12,
-                    "voltage_avg": 217.5,
-                    "pressure": 100.0,
-                }
+                if dev_id in system_state["latest_by_device"]:
+                    continue
+                rec = records[dev_idx % len(records)]
+                ai_res = anomaly_detector.predict(
+                    device_id=dev_id,
+                    temperature=rec["temperature"],
+                    vibration=rec["vibration"],
+                    power_usage=rec["power_usage"],
+                    pressure=rec["pressure"],
+                    current_avg=rec.get("current_avg", 0.12),
+                    voltage_avg=rec.get("voltage_avg", 217.5),
+                )
+                is_anom = bool(ai_res.get("is_anomaly", False))
                 system_state["latest_by_device"][dev_id] = {
                     "id": dev_id,
                     "device": dev_id,
-                    "machine_name": f"Factory Machine #{dev_idx + 1}",
-                    "temp": rec.get("temperature", 22.5),
-                    "vib": rec.get("vibration", 1.2),
-                    "pwr": rec.get("power_usage", 2.89),
-                    "pressure": rec.get("pressure", 100.0),
-                    "current_avg": rec.get("current_avg", 0.12),
-                    "voltage_avg": rec.get("voltage_avg", 217.5),
-                    "status": "normal",
-                    "status_short": "Machine operating within safe parameters",
-                    "recommendations": ["Continue standard operation"],
-                    "loss": 0.05,
-                    "threshold": _ANOMALY_THRESHOLD,
-                    "confidence": 85.0,
+                    "machine_name": MACHINE_NAMES.get(dev_id, f"Factory Machine #{dev_idx + 1}"),
+                    "temp": float(rec["temperature"]),
+                    "vib": float(rec["vibration"]),
+                    "pwr": float(rec["power_usage"]),
+                    "pressure": float(rec["pressure"]),
+                    "current_avg": float(rec.get("current_avg", 0.12)),
+                    "voltage_avg": float(rec.get("voltage_avg", 217.5)),
+                    "status": "critical" if is_anom else "normal",
+                    "status_short": ai_res.get("description", "Machine operating within safe parameters"),
+                    "recommendations": [ai_res.get("recommendation", "Continue standard operation")],
+                    "loss": float(ai_res.get("loss", 0.05)),
+                    "threshold": float(ai_res.get("threshold", _ANOMALY_THRESHOLD)),
+                    "confidence": float(ai_res.get("confidence", 85.0)),
+                    "severity": ai_res.get("severity", "low"),
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 }
         except Exception as exc:
             print(f"[SystemState] Fleet seed notice: {exc}")
 
+
 # ---------------------------------------------------------------------------
-# Blockchain integration (Optional — can run without Hyperledger Fabric)
+# Blockchain integration (Optional — runs with MongoDB Hash-Chain if Fabric offline)
 # ---------------------------------------------------------------------------
 try:
     from fabric_manager import fabric_client
@@ -272,14 +338,13 @@ try:
     print("Blockchain active: Hyperledger Fabric connected")
 except ImportError as e:
     BLOCKCHAIN_ACTIVE = False
-    print("Blockchain inactive: Hyperledger Fabric not available (running in local simulation mode)")
+    print("Blockchain mode: MongoDB Persistent SHA-256 Hash-Chain Ledger")
     print(f"   Notice: {e}")
 
 # ---------------------------------------------------------------------------
 # GNN model integration & scheduler
 # ---------------------------------------------------------------------------
 try:
-    import sys
     import torch
     sys.path.append(os.path.join(ROOT_DIR, "ai-service"))
     from gnn_model import DeviceGCN, build_factory_adjacency_matrix
@@ -323,14 +388,14 @@ async def lifespan(app: FastAPI):
     await connect_to_mongo()
     print("MongoDB connection check complete.")
     await _setup_system_state()
-    
+
     scheduler = None
     if BackgroundScheduler is not None:
         scheduler = BackgroundScheduler()
         scheduler.add_job(run_gnn_analysis, "interval", minutes=5)
         scheduler.start()
         print(f"[Scheduler] Started - GNN trigger every 5 minutes | threshold={_ANOMALY_THRESHOLD}")
-    
+
     feeder_task = asyncio.create_task(autonomous_feeder_loop())
 
     yield
@@ -362,13 +427,7 @@ app.include_router(auth_router, prefix="/api")
 # Security helpers
 # ---------------------------------------------------------------------------
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
-bearer_scheme  = HTTPBearer(auto_error=False)
-
-if not API_KEY:
-    raise RuntimeError("DEPIN_API_KEY is required in root .env before starting")
-
-print("API Key loaded and verified.")
-print(f"Anomaly threshold: {_ANOMALY_THRESHOLD}")
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
 async def verify_auth_or_api_key(
@@ -404,8 +463,6 @@ async def verify_auth_or_api_key(
 
 verify_api_key = verify_auth_or_api_key
 
-
-# Include routers with API key protection (must be after verify_api_key is defined)
 app.include_router(blockchain_router, prefix="/api", dependencies=[Depends(verify_api_key)])
 app.include_router(fraud_router, prefix="/api", dependencies=[Depends(verify_api_key)])
 app.include_router(security_router, prefix="/api", dependencies=[Depends(verify_api_key)])
@@ -436,22 +493,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------------------------------------------------------------------------
-# Audit logging middleware
-# ---------------------------------------------------------------------------
-# Audit middleware (cross-platform safe)
-# ---------------------------------------------------------------------------
-import tempfile
 AUDIT_LOG_PATH = os.path.join(tempfile.gettempdir(), "depin_audit.log")
 
 
 @app.middleware("http")
 async def audit_logger(request: Request, call_next):
-    start    = _time.time()
+    start = _time.time()
     response = await call_next(request)
     duration = (_time.time() - start) * 1000
     log_line = (
-        f"{datetime.now().isoformat()}"
+        f"{datetime.now(timezone.utc).isoformat()}"
         f"|{request.method}"
         f"|{request.url.path}"
         f"|{response.status_code}"
@@ -469,21 +520,19 @@ async def audit_logger(request: Request, call_next):
 # Data model
 # ---------------------------------------------------------------------------
 class SensorData(BaseModel):
-    device_id:   str
+    device_id: str
     temperature: float
-    vibration:   float
+    vibration: float
     power_usage: float
-    pressure:    float = 0.0
+    pressure: float = 0.0
     current_avg: float = 0.12
     voltage_avg: float = 217.5
-    timestamp:   str
-    signature:   str = ""
-    
-    # Optional: Human-readable fields for non-technical users
-    machine_name: str = ""  # e.g., "Mixer", "Compressor"
-    alert_level: str = ""   # e.g., "NORMAL", "WARNING", "CRITICAL"
-    status_short: str = ""  # e.g., "Machine running well"
-    recommendations: list = []  # List of actions for non-technical users
+    timestamp: str
+    signature: str = ""
+    machine_name: str = ""
+    alert_level: str = ""
+    status_short: str = ""
+    recommendations: list = []
 
 
 def _sensor_signature(data: SensorData) -> str:
@@ -512,14 +561,14 @@ def _verify_sensor_payload(data: SensorData):
 
 
 # ---------------------------------------------------------------------------
-# Routes
+# Core Routes (All Powered by get_canonical_stats Single Source of Truth)
 # ---------------------------------------------------------------------------
 @app.get("/")
 def read_root():
     return {
-        "status":           "DePIN-Guard API is live",
+        "status": "DePIN-Guard API is live",
         "blockchain_active": BLOCKCHAIN_ACTIVE,
-        "threshold":        _ANOMALY_THRESHOLD,
+        "threshold": _ANOMALY_THRESHOLD,
     }
 
 
@@ -532,8 +581,8 @@ def health_check():
         except Exception as exc:
             blockchain_status = {"ready": False, "error": str(exc)}
     return {
-        "status":            "healthy",
-        "service":           "backend",
+        "status": "healthy",
+        "service": "backend",
         "blockchain_active": BLOCKCHAIN_ACTIVE,
         "blockchain_status": blockchain_status,
     }
@@ -541,7 +590,6 @@ def health_check():
 
 @app.get("/api/health")
 def api_health_check():
-    """Health check endpoint for cloud deployment (Render, Vercel CDN)"""
     return {
         "status": "healthy",
         "service": "depin-guard-backend",
@@ -551,135 +599,151 @@ def api_health_check():
 
 @app.get("/api/public/stats")
 async def get_public_stats():
-    """Real dynamic telemetry metrics for the landing page"""
-    from database import db as mongo_db
-    active_devices = 0
-    anomalies = 0
-    total_scans = 0
-    if mongo_db is not None:
-        try:
-            total_scans = await mongo_db["sensor_data"].count_documents({})
-            anomalies = await mongo_db["fraud_alerts"].count_documents({})
-            devices_list = await mongo_db["sensor_data"].distinct("device_id")
-            active_devices = len(devices_list)
-        except Exception:
-            pass
-
-    if active_devices == 0:
-        active_devices = system_state["dashboard"].get("active_devices", 0)
-    if total_scans == 0:
-        total_scans = system_state["dashboard"].get("total_scans", 0)
-    if anomalies == 0:
-        anomalies = system_state["dashboard"].get("anomalies", 0)
-
+    """Real dynamic telemetry metrics for the landing page, synchronized with MongoDB."""
+    c_stats = await get_canonical_stats(system_state)
     return {
-        "devices": active_devices,
-        "scans": total_scans,
-        "threats": anomalies,
-        "uptime": 99.9 if total_scans > 0 else 100.0,
+        "devices": c_stats["active_devices"],
+        "scans": c_stats["total_scans"],
+        "threats": c_stats["anomalies"],
+        "blocks": c_stats["total_blocks"],
+        "uptime": c_stats["uptime"],
+        "source": c_stats["source"],
     }
 
 
 @app.get("/api/dashboard", dependencies=[Depends(verify_api_key)])
 async def get_dashboard():
-    """Get dashboard data from MongoDB (with real latest device telemetry)"""
-    from database import db as mongo_db, mongodb_client
-    
+    """Get dashboard data from MongoDB with canonical counters and 33-device fleet state."""
+    import database as db_mod
+    mongo_db = db_mod.db
+    mongodb_client = db_mod.mongodb_client
+
+    c_stats = await get_canonical_stats(system_state)
+    system_state["dashboard"].update({
+        "active_devices": c_stats["active_devices"],
+        "total_scans": c_stats["total_scans"],
+        "anomalies": c_stats["anomalies"],
+        "normal_scans": c_stats["normal_scans"],
+        "uptime": c_stats["uptime"],
+    })
+
     recent_data = []
     if mongo_db is not None and mongodb_client is not None:
         try:
-            recent_raw = await mongo_db["sensor_data"].find({}).sort("timestamp", -1).limit(20).to_list(length=20)
+            recent_raw = await mongo_db["sensor_data"].find({}).sort("timestamp", -1).limit(25).to_list(length=25)
             for idx, doc in enumerate(recent_raw):
-                transformed = {
+                ts = doc.get("timestamp", "")
+                ts_iso = ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
+                is_anom = bool(doc.get("is_anomaly") or doc.get("status") == "critical")
+                recent_data.append({
                     "id": str(doc.get("_id", idx)),
                     "device": doc.get("device_id", "unknown"),
-                    "temp": doc.get("temperature", 0),
-                    "vib": doc.get("vibration", 0),
-                    "pwr": doc.get("power_usage", 0),
-                    "status": doc.get("status", "normal"),
-                    "timestamp": doc.get("timestamp", ""),
-                }
-                recent_data.append(transformed)
+                    "machine_name": doc.get("machine_name") or doc.get("device_id", "unknown"),
+                    "temp": float(doc.get("temperature", 0)),
+                    "vib": float(doc.get("vibration", 0)),
+                    "pwr": float(doc.get("power_usage", 0)),
+                    "pressure": float(doc.get("pressure") or 0),
+                    "current_avg": float(doc.get("current_avg") or 0.12),
+                    "voltage_avg": float(doc.get("voltage_avg") or 217.5),
+                    "loss": float(doc.get("ai_loss", 0.0)),
+                    "threshold": float(doc.get("ai_threshold", _ANOMALY_THRESHOLD)),
+                    "confidence": _compute_dynamic_confidence(doc, is_anom),
+                    "status": "critical" if is_anom else "normal",
+                    "status_short": doc.get("status_short") or ("Abnormal reading detected" if is_anom else "Machine operating within safe parameters"),
+                    "timestamp": ts_iso,
+                })
         except Exception as e:
             print(f"[Dashboard] MongoDB read notice: {e}")
-    
+
     latest_devices = list(system_state["latest_by_device"].values())
-    if not latest_devices and recent_data:
-        seen = set()
-        for r in recent_data:
-            if r["device"] not in seen:
-                seen.add(r["device"])
-                latest_devices.append(r)
 
     return {
-        "stats": system_state["dashboard"],
+        "stats": {
+            "active_devices": c_stats["active_devices"],
+            "total_scans": c_stats["total_scans"],
+            "anomalies": c_stats["anomalies"],
+            "normal_scans": c_stats["normal_scans"],
+            "total_blocks": c_stats["total_blocks"],
+            "uptime": c_stats["uptime"],
+        },
         "recent_data": recent_data,
         "latest_devices": latest_devices,
         "blockchain_active": BLOCKCHAIN_ACTIVE,
-        "source": "mongodb" if mongo_db is not None else "in_memory"
+        "source": c_stats["source"],
     }
 
 
 @app.get("/api/blockchain", dependencies=[Depends(verify_api_key)])
 async def get_blockchain():
-    from database import db as mongo_db
+    import database as db_mod
+    mongo_db = db_mod.db
+    c_stats = await get_canonical_stats(system_state)
     if mongo_db is not None:
         try:
-            total_blocks = await mongo_db["blockchain_blocks"].count_documents({})
-            recent_blocks = await mongo_db["blockchain_blocks"].find({}, {"_id": 0}).sort("index", -1).limit(20).to_list(20)
+            recent_blocks = await mongo_db["blockchain_blocks"].find({}, {"_id": 0}).sort("index", -1).limit(50).to_list(50)
             return {
-                "total_blocks": max(total_blocks, 1),
-                "transactions": max(total_blocks, 1),
-                "net_status": "Active",
-                "recent_blocks": recent_blocks
+                "total_blocks": c_stats["total_blocks"],
+                "transactions": c_stats["transactions"],
+                "anomalies_anchored": c_stats["anomalies"],
+                "net_status": "Connected (Fabric)" if BLOCKCHAIN_ACTIVE else "Active (Hash-Chain)",
+                "recent_blocks": recent_blocks,
+                "source": c_stats["source"],
             }
         except Exception:
             pass
-    return system_state["blockchain"]
+    return {
+        "total_blocks": c_stats["total_blocks"],
+        "transactions": c_stats["transactions"],
+        "anomalies_anchored": c_stats["anomalies"],
+        "net_status": "Active",
+        "recent_blocks": system_state["blockchain"]["recent_blocks"],
+        "source": c_stats["source"],
+    }
 
 
 @app.get("/api/ai-analysis", dependencies=[Depends(verify_api_key)])
 async def get_ai_analysis():
     ai_metrics = load_ai_metrics()
-    from database import db as mongo_db
+    import database as db_mod
+    mongo_db = db_mod.db
+    c_stats = await get_canonical_stats(system_state)
+
     if mongo_db is not None:
         try:
-            total_scans = await mongo_db["sensor_data"].count_documents({})
-            anom_count = await mongo_db["sensor_data"].count_documents({"$or": [{"is_anomaly": True}, {"status": "critical"}]})
             recent_anoms = await mongo_db["sensor_data"].find(
-                {"$or": [{"is_anomaly": True}, {"status": "critical"}]},
-                {"_id": 0}
-            ).sort("timestamp", -1).limit(10).to_list(10)
+                {"$or": [{"is_anomaly": True}, {"status": "critical"}]}
+            ).sort("timestamp", -1).limit(50).to_list(50)
 
             results = []
             for i, a in enumerate(recent_anoms):
-                conf_val = a.get("confidence")
-                if conf_val is None or float(conf_val) == 0.0:
-                    loss_v = float(a.get("ai_loss", 0.0))
-                    thresh_v = float(a.get("ai_threshold", _ANOMALY_THRESHOLD))
-                    ratio_v = loss_v / thresh_v if thresh_v > 0 else 1.2
-                    conf_val = 50.0 + 49.5 * (1.0 - math.exp(-0.65 * max(0.0, ratio_v - 1.0)))
-                conf_float = float(conf_val)
-                if 0.0 < conf_float <= 1.0:
-                    conf_float = round(conf_float * 100.0, 1)
-
+                ts = a.get("timestamp", "")
+                ts_iso = ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
+                conf_float = _compute_dynamic_confidence(a, True)
+                loss_v = float(a.get("ai_loss", 0.0))
+                thresh_v = float(a.get("ai_threshold", _ANOMALY_THRESHOLD))
                 results.append({
-                    "id": f"ai-{a.get('device_id', 'dev')}-{i}",
+                    "id": str(a.get("_id", f"ai-{a.get('device_id', 'dev')}-{i}")),
                     "device": a.get("device_id", "Unknown"),
-                    "analysis_type": "Temporal Reconstruction",
+                    "machine_name": a.get("machine_name") or a.get("device_id", "Unknown"),
+                    "analysis_type": "6-Channel Temporal Reconstruction",
                     "severity": a.get("severity", "high"),
-                    "confidence": round(conf_float, 1),
-                    "loss": round(float(a.get("ai_loss", 0.0)), 6),
-                    "threshold": round(float(a.get("ai_threshold", _ANOMALY_THRESHOLD)), 6),
-                    "timestamp": str(a.get("timestamp", datetime.now(timezone.utc).isoformat())),
-                    "description": a.get("description") or f"Sensor values (Temp: {a.get('temperature')} C, Vib: {a.get('vibration')} mm/s) exceeded anomaly threshold",
+                    "confidence": conf_float,
+                    "loss": round(loss_v, 6),
+                    "threshold": round(thresh_v, 6),
+                    "timestamp": ts_iso,
+                    "description": a.get("description") or (
+                        f"Sensor excursion on {a.get('device_id')} "
+                        f"(Temp: {a.get('temperature')}°C, Vib: {a.get('vibration')} mm/s, Pwr: {a.get('power_usage')} kW) "
+                        f"| LSTM MSE: {loss_v:.4f} > {thresh_v:.4f}"
+                    ),
                     "recommendation": a.get("recommendation") or "Check cooling circuit and verify vibration damper.",
-                    "model_name": "PyTorch 6-Channel Temporal LSTM Autoencoder"
+                    "model_name": "PyTorch 6-Channel Temporal LSTM Autoencoder",
                 })
 
             return {
-                "total_analyses": total_scans,
-                "anomalies_found": anom_count,
+                "total_analyses": c_stats["total_scans"],
+                "anomalies_found": c_stats["anomalies"],
+                "normal_scans": c_stats["normal_scans"],
                 "accuracy": ai_metrics.get("lstm_accuracy", 82.4),
                 "active_models_count": 2,
                 "available_models": [
@@ -689,189 +753,113 @@ async def get_ai_analysis():
                 "lstm_accuracy": ai_metrics.get("lstm_accuracy", 82.4),
                 "gnn_accuracy": ai_metrics.get("gnn_accuracy", 87.65),
                 "gnn_precision": ai_metrics.get("gnn_precision", 93.33),
-                "recent_results": results
+                "recent_results": results,
+                "source": c_stats["source"],
             }
-        except Exception:
-            pass
-    return system_state["ai"]
+        except Exception as exc:
+            print(f"[AIAnalysis] Query notice: {exc}")
+
+    return {
+        **system_state["ai"],
+        "total_analyses": c_stats["total_scans"],
+        "anomalies_found": c_stats["anomalies"],
+    }
+
+
+def _transform_history_docs(raw_history: list) -> list:
+    history = []
+    for idx, doc in enumerate(raw_history):
+        doc_id = str(doc.get("_id", idx))
+        dev_id = doc.get("device_id", "unknown")
+        ts = doc.get("timestamp", "")
+        ts_iso = ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
+        is_anom = bool(doc.get("is_anomaly") or doc.get("anomaly") or doc.get("status") == "critical")
+        status_val = "critical" if is_anom else "verified"
+
+        raw_hash = doc.get("hash")
+        if not raw_hash:
+            raw_hash = hashlib.sha256(f"{dev_id}:{ts_iso}:{doc.get('temperature', 0)}:{doc.get('vibration', 0)}".encode()).hexdigest()
+
+        loss_val = float(doc.get("ai_loss", doc.get("loss", 0.0)) or 0.0)
+        thresh_val = float(doc.get("ai_threshold", doc.get("threshold", _ANOMALY_THRESHOLD)) or _ANOMALY_THRESHOLD)
+        conf_float = _compute_dynamic_confidence(doc, is_anom)
+
+        history.append({
+            "id": doc_id,
+            "device": dev_id,
+            "device_id": dev_id,
+            "machine_name": doc.get("machine_name") or dev_id,
+            "status_short": doc.get("status_short") or ("Abnormal reading detected" if is_anom else "Operating normally"),
+            "hash": raw_hash,
+            "value": f"{doc.get('temperature', 0)}°C",
+            "timestamp": ts_iso,
+            "status": status_val,
+            "temp": float(doc.get("temperature", 0)),
+            "temperature": float(doc.get("temperature", 0)),
+            "vib": float(doc.get("vibration", 0)),
+            "vibration": float(doc.get("vibration", 0)),
+            "pwr": float(doc.get("power_usage", 0)),
+            "power_usage": float(doc.get("power_usage", 0)),
+            "pressure": float(doc.get("pressure") or 0),
+            "current_avg": float(doc.get("current_avg") or 0.12),
+            "voltage_avg": float(doc.get("voltage_avg") or 217.5),
+            "loss": round(loss_val, 6),
+            "threshold": round(thresh_val, 6),
+            "confidence": round(conf_float, 1),
+            "severity": doc.get("severity", "critical" if is_anom else "low"),
+            "description": doc.get("description", ""),
+            "anomaly": 1 if is_anom else 0,
+            "is_anomaly": is_anom,
+            "ai_source": doc.get("ai_source", "PyTorch 6-Channel LSTM Autoencoder"),
+            "ai_error": doc.get("ai_error", ""),
+            "recommendation": doc.get("recommendation", "Operational telemetry verified"),
+            "recorded_at": ts_iso,
+        })
+    return history
 
 
 @app.get("/api/history", dependencies=[Depends(verify_api_key)])
-async def get_history():
-    """Get recent sensor readings from MongoDB"""
-    from database import db as mongo_db, mongodb_client
-    
-    if mongo_db is None or mongodb_client is None:
-        raise HTTPException(status_code=503, detail="MongoDB not available")
-    
-    try:
-        total_scans = await mongo_db["sensor_data"].count_documents({})
-        total_anomalies = await mongo_db["sensor_data"].count_documents({"$or": [{"is_anomaly": True}, {"status": "critical"}]})
-        total_normal = max(0, total_scans - total_anomalies)
+async def get_history(limit: int = 100):
+    """Get recent sensor readings from MongoDB with canonical totals."""
+    import database as db_mod
+    mongo_db = db_mod.db
+    mongodb_client = db_mod.mongodb_client
+    c_stats = await get_canonical_stats(system_state)
 
-        raw_history = await mongo_db["sensor_data"].find({}).sort("timestamp", -1).limit(100).to_list(length=100)
-        
-        history = []
-        for idx, doc in enumerate(raw_history):
-            doc_id = str(doc.get("_id", idx))
-            dev_id = doc.get("device_id", "unknown")
-            ts = doc.get("timestamp", "")
-            if hasattr(ts, "isoformat"):
-                ts = ts.isoformat()
-            else:
-                ts = str(ts)
-            is_anom = bool(doc.get("is_anomaly") or doc.get("anomaly"))
-            status = "critical" if is_anom else doc.get("status", "verified")
-            if status == "normal":
-                status = "verified"
-
-            raw_hash = doc.get("hash")
-            if not raw_hash:
-                raw_hash = hashlib.sha256(f"{dev_id}:{ts}:{doc.get('temperature', 0)}".encode()).hexdigest()
-
-            loss_val = float(doc.get("ai_loss", doc.get("loss", 0.0)))
-            thresh_val = float(doc.get("ai_threshold", doc.get("threshold", _ANOMALY_THRESHOLD)))
-            conf_val = doc.get("confidence")
-            if conf_val is None or float(conf_val) == 0.0:
-                if is_anom:
-                    ratio_v = loss_val / thresh_val if thresh_val > 0 else 1.2
-                    conf_val = 54.0 + 45.4 * (1.0 - math.exp(-0.75 * max(0.05, ratio_v - 1.0)))
-                else:
-                    conf_val = 85.0
-            conf_float = float(conf_val)
-            if 0.0 < conf_float <= 1.0:
-                conf_float = round(conf_float * 100.0, 1)
-
-            transformed = {
-                "id": doc_id,
-                "device": dev_id,
-                "machine_name": doc.get("machine_name") or dev_id,
-                "status_short": doc.get("status_short") or ("Operating normally" if not is_anom else "Abnormal reading detected"),
-                "hash": raw_hash,
-                "value": f"{doc.get('temperature', 0)}°C",
-                "timestamp": ts,
-                "status": status,
-                "temp": doc.get("temperature", 0),
-                "vib": doc.get("vibration", 0),
-                "pwr": doc.get("power_usage", 0),
-                "pressure": doc.get("pressure", 0),
-                "current_avg": doc.get("current_avg", 0.12),
-                "voltage_avg": doc.get("voltage_avg", 217.5),
-                "loss": round(loss_val, 6),
-                "threshold": round(thresh_val, 6),
-                "confidence": round(conf_float, 1),
-                "severity": doc.get("severity", "critical" if is_anom else "low"),
-                "description": doc.get("description", ""),
-                "anomaly": 1 if is_anom else 0,
-                "ai_source": doc.get("ai_source", "lstm_autoencoder"),
-                "ai_error": doc.get("ai_error", ""),
-                "recommendation": doc.get("recommendation", "Operational telemetry verified"),
-                "recorded_at": ts,
+    if mongo_db is not None and mongodb_client is not None:
+        try:
+            capped_limit = max(1, min(limit, 250))
+            raw_history = await mongo_db["sensor_data"].find({}).sort("timestamp", -1).limit(capped_limit).to_list(length=capped_limit)
+            history = _transform_history_docs(raw_history)
+            return {
+                "history": history,
+                "total_scans": c_stats["total_scans"],
+                "total_anomalies": c_stats["anomalies"],
+                "total_normal": c_stats["normal_scans"],
+                "count": len(history),
+                "source": "mongodb",
             }
-            history.append(transformed)
-        
-        return {
-            "history": history,
-            "total_scans": total_scans,
-            "total_anomalies": total_anomalies,
-            "total_normal": total_normal,
-            "count": len(history),
-            "source": "mongodb",
-        }
-    except Exception as e:
-        print(f"[History] Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        except Exception as e:
+            print(f"[History] Error: {e}")
+
+    return {
+        "history": list(reversed(system_state["history"][-limit:])),
+        "total_scans": c_stats["total_scans"],
+        "total_anomalies": c_stats["anomalies"],
+        "total_normal": c_stats["normal_scans"],
+        "count": len(system_state["history"]),
+        "source": "in_memory",
+    }
 
 
 @app.get("/api/history/all", dependencies=[Depends(verify_api_key)])
-async def get_all_history():
-    """Get sensor readings for charts from MongoDB"""
-    from database import db as mongo_db, mongodb_client
-    
-    if mongo_db is None or mongodb_client is None:
-        raise HTTPException(status_code=503, detail="MongoDB not available")
-    
-    try:
-        total_scans = await mongo_db["sensor_data"].count_documents({})
-        total_anomalies = await mongo_db["sensor_data"].count_documents({"$or": [{"is_anomaly": True}, {"status": "critical"}]})
-        total_normal = max(0, total_scans - total_anomalies)
-
-        raw_history = await mongo_db["sensor_data"].find({}).sort("timestamp", -1).limit(200).to_list(length=200)
-        
-        history = []
-        for idx, doc in enumerate(raw_history):
-            doc_id = str(doc.get("_id", idx))
-            dev_id = doc.get("device_id", "unknown")
-            ts = doc.get("timestamp", "")
-            if hasattr(ts, "isoformat"):
-                ts = ts.isoformat()
-            else:
-                ts = str(ts)
-            is_anom = bool(doc.get("is_anomaly") or doc.get("anomaly"))
-            status = "critical" if is_anom else doc.get("status", "verified")
-            if status == "normal":
-                status = "verified"
-
-            raw_hash = doc.get("hash")
-            if not raw_hash:
-                raw_hash = hashlib.sha256(f"{dev_id}:{ts}:{doc.get('temperature', 0)}".encode()).hexdigest()
-
-            loss_val = float(doc.get("ai_loss", doc.get("loss", 0.0)))
-            thresh_val = float(doc.get("ai_threshold", doc.get("threshold", _ANOMALY_THRESHOLD)))
-            conf_val = doc.get("confidence")
-            if conf_val is None or float(conf_val) == 0.0:
-                if is_anom:
-                    ratio_v = loss_val / thresh_val if thresh_val > 0 else 1.2
-                    conf_val = 54.0 + 45.4 * (1.0 - math.exp(-0.75 * max(0.05, ratio_v - 1.0)))
-                else:
-                    conf_val = 85.0
-            conf_float = float(conf_val)
-            if 0.0 < conf_float <= 1.0:
-                conf_float = round(conf_float * 100.0, 1)
-
-            transformed = {
-                "id": doc_id,
-                "device": dev_id,
-                "machine_name": doc.get("machine_name") or dev_id,
-                "status_short": doc.get("status_short") or ("Operating normally" if not is_anom else "Abnormal reading detected"),
-                "hash": raw_hash,
-                "value": f"{doc.get('temperature', 0)}°C",
-                "timestamp": ts,
-                "status": status,
-                "temp": doc.get("temperature", 0),
-                "vib": doc.get("vibration", 0),
-                "pwr": doc.get("power_usage", 0),
-                "pressure": doc.get("pressure", 0),
-                "current_avg": doc.get("current_avg", 0.12),
-                "voltage_avg": doc.get("voltage_avg", 217.5),
-                "loss": round(loss_val, 6),
-                "threshold": round(thresh_val, 6),
-                "confidence": round(conf_float, 1),
-                "severity": doc.get("severity", "critical" if is_anom else "low"),
-                "description": doc.get("description", ""),
-                "anomaly": 1 if is_anom else 0,
-                "ai_source": doc.get("ai_source", "lstm_autoencoder"),
-                "ai_error": doc.get("ai_error", ""),
-                "recommendation": doc.get("recommendation", "Operational telemetry verified"),
-                "recorded_at": ts,
-            }
-            history.append(transformed)
-        
-        return {
-            "history": history,
-            "total_scans": total_scans,
-            "total_anomalies": total_anomalies,
-            "total_normal": total_normal,
-            "count": len(history),
-            "source": "mongodb",
-        }
-    except Exception as e:
-        print(f"[HistoryAll] Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+async def get_all_history(limit: int = 200):
+    """Get sensor readings for History table and charts with canonical MongoDB totals."""
+    return await get_history(limit=limit)
 
 
 async def _execute_telemetry_pipeline(data: SensorData) -> dict:
-    # In-memory AI inference via PyTorch LSTM Autoencoder
+    # 1. Real 6-channel PyTorch LSTM Autoencoder inference
     ai_result = anomaly_detector.predict(
         device_id=data.device_id,
         temperature=data.temperature,
@@ -879,39 +867,23 @@ async def _execute_telemetry_pipeline(data: SensorData) -> dict:
         power_usage=data.power_usage,
         pressure=data.pressure,
         current_avg=getattr(data, "current_avg", 0.12),
-        voltage_avg=getattr(data, "voltage_avg", 217.5)
+        voltage_avg=getattr(data, "voltage_avg", 217.5),
     )
     is_anomaly = bool(ai_result.get("is_anomaly", False))
-    recommendation = ai_result.get("recommendation", "Normal Operation")
+    recommendation = ai_result.get("recommendation", "Machine operating within safe nominal parameters.")
     description = ai_result.get("description", "")
     loss_val = float(ai_result.get("loss", 0.0))
     threshold_val = float(ai_result.get("threshold", _ANOMALY_THRESHOLD))
     confidence_val = float(ai_result.get("confidence", 85.0))
     severity_val = ai_result.get("severity", "critical" if is_anomaly else "low")
-    ai_source = "in_memory_lstm"
+    ai_source = "PyTorch 6-Channel LSTM Autoencoder"
 
-    # Track latest reading per device
-    system_state["latest_by_device"][data.device_id] = {
-        "id": data.device_id,
-        "device": data.device_id,
-        "machine_name": data.machine_name or data.device_id,
-        "temp": data.temperature,
-        "vib": data.vibration,
-        "pwr": data.power_usage,
-        "pressure": data.pressure,
-        "current_avg": getattr(data, "current_avg", 0.12),
-        "voltage_avg": getattr(data, "voltage_avg", 217.5),
-        "status": "critical" if is_anomaly else "normal",
-        "status_short": data.status_short or ("Operating normally" if not is_anomaly else "Abnormal reading detected"),
-        "recommendations": data.recommendations if data.recommendations else (["Inspect equipment"] if is_anomaly else ["Continue standard operation"]),
-        "loss": loss_val,
-        "threshold": threshold_val,
-        "confidence": confidence_val,
-        "severity": severity_val,
-        "timestamp": data.timestamp,
-    }
+    now_dt = datetime.now(timezone.utc)
+    now_iso = now_dt.isoformat()
+    payload_dict = data.model_dump() if hasattr(data, "model_dump") else data.dict()
+    tx_hash = hashlib.sha256(json.dumps(payload_dict, sort_keys=True).encode()).hexdigest()
 
-    # --- Save to MongoDB ---
+    # 2. Save reading to MongoDB sensor_data
     sensor_doc = SensorDataModel(
         device_id=data.device_id,
         temperature=data.temperature,
@@ -929,55 +901,23 @@ async def _execute_telemetry_pipeline(data: SensorData) -> dict:
         description=description,
         recommendation=recommendation,
         machine_name=data.machine_name or data.device_id,
-        status_short=data.status_short or ("Operating normally" if not is_anomaly else "Abnormal reading detected"),
+        status_short=description if is_anomaly else (data.status_short or "Machine operating within safe parameters"),
+        hash=tx_hash,
+        timestamp=now_dt,
     )
-    await save_sensor_data(sensor_doc)
+    inserted_sensor_id = await save_sensor_data(sensor_doc)
 
-    # --- Update in-memory counters ---
-    system_state["dashboard"]["total_scans"] += 1
-    system_state["ai"]["total_analyses"] += 1
-
-    status_label = "critical" if is_anomaly else "normal"
-    tx_hash      = "---"
-
-    # --- Anomaly path ---
+    # 3. If anomaly, save to fraud_alerts and blockchain_blocks before computing canonical stats
     if is_anomaly:
-        system_state["dashboard"]["anomalies"]       += 1
-        system_state["ai"]["anomalies_found"]        += 1
-        system_state["blockchain"]["total_blocks"]   += 1
-        system_state["blockchain"]["transactions"]   += 1
-
-    # --- Broadcast to WebSocket clients ---
-    await broadcast_data({
-        "device_id":    data.device_id,
-        "machine_name": data.machine_name or data.device_id,
-        "temperature":  data.temperature,
-        "vibration":    data.vibration,
-        "power_usage":  data.power_usage,
-        "current_avg":  getattr(data, "current_avg", 0.12),
-        "voltage_avg":  getattr(data, "voltage_avg", 217.5),
-        "pressure":     data.pressure,
-        "is_anomaly":   is_anomaly,
-        "loss":         loss_val,
-        "threshold":    threshold_val,
-        "confidence":   confidence_val,
-        "severity":     severity_val,
-        "status":       "critical" if is_anomaly else "normal",
-        "status_short": data.status_short or ("Operating normally" if not is_anomaly else "Abnormal reading detected"),
-        "timestamp":    datetime.now(timezone.utc).isoformat(),
-        "total_scans":  system_state["dashboard"]["total_scans"],
-        "anomalies":    system_state["dashboard"]["anomalies"],
-    })
-
-    if is_anomaly:
-
-        # --- Save to MongoDB fraud alerts ---
         fraud_alert = FraudAlertModel(
             device_id=data.device_id,
-            alert_type="anomaly",
+            alert_type="anomaly_excursion",
             severity=severity_val,
-            message=description or recommendation,
+            message=description,
+            recommendation=recommendation,
             confidence=confidence_val,
+            resolved=False,
+            sensor_doc_id=inserted_sensor_id,
             anomaly_data={
                 "temperature": data.temperature,
                 "vibration": data.vibration,
@@ -989,109 +929,177 @@ async def _execute_telemetry_pipeline(data: SensorData) -> dict:
                 "ai_threshold": threshold_val,
                 "confidence": confidence_val,
                 "recommendation": recommendation,
-            }
+                "hash": tx_hash,
+            },
+            timestamp=now_dt,
         )
         await save_fraud_alert(fraud_alert)
 
-        # Build data hash for blockchain record
-        data_string   = json.dumps(data.dict(), sort_keys=True)
-        tx_hash       = hashlib.sha256(data_string.encode()).hexdigest()
         previous_hash = (
             system_state["blockchain"]["recent_blocks"][0]["hash"]
             if system_state["blockchain"]["recent_blocks"]
-            else "0000000000000000"
+            else "0000000000000000000000000000000000000000000000000000000000000000"
         )
+        import database as db_mod
+        mongo_db = db_mod.db
+        next_block_idx = system_state["blockchain"]["total_blocks"] + 1
+        if mongo_db is not None:
+            try:
+                next_block_idx = await mongo_db["blockchain_blocks"].count_documents({})
+            except Exception:
+                pass
 
         block_record = {
-            "index":     system_state["blockchain"]["total_blocks"],
-            "id":        system_state["blockchain"]["total_blocks"],
-            "hash":      tx_hash,
+            "index": next_block_idx,
+            "id": next_block_idx,
+            "hash": tx_hash,
             "prev_hash": previous_hash,
-            "merkle_root": hashlib.sha256(f"{data.device_id}:{tx_hash}".encode()).hexdigest(),
+            "merkle_root": hashlib.sha256(f"{data.device_id}:{tx_hash}:{loss_val}".encode()).hexdigest(),
             "device_id": data.device_id,
+            "machine_name": data.machine_name or data.device_id,
             "anomaly_score": round(loss_val, 4),
-            "orgMSP":    "ManufacturerMSP",
-            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
-            "status":    "confirmed",
+            "confidence": confidence_val,
+            "orgMSP": "ManufacturerMSP",
+            "timestamp": now_iso,
+            "status": "confirmed",
             "validator": "Consortium-Raft-Node-1",
             "transactions": 1,
             "tx_count": 1,
         }
         system_state["blockchain"]["recent_blocks"].insert(0, block_record)
-        system_state["blockchain"]["recent_blocks"] = \
-            system_state["blockchain"]["recent_blocks"][:10]
+        system_state["blockchain"]["recent_blocks"] = system_state["blockchain"]["recent_blocks"][:20]
 
-        from database import db as mongo_db
         if mongo_db is not None:
             try:
                 await mongo_db["blockchain_blocks"].insert_one(dict(block_record))
             except Exception:
                 pass
 
-        ai_record = {
-            "confidence": confidence_val,
-            "device":         data.device_id,
-            "recommendation": recommendation,
-            "timestamp":      datetime.now().strftime("%H:%M:%S"),
-            "severity":       severity_val,
-            "model_name":     "PyTorch 6-Channel Temporal LSTM Autoencoder",
-            "loss":           loss_val,
-            "threshold":      threshold_val,
-        }
-
-        system_state["ai"]["recent_results"].insert(0, ai_record)
-        system_state["ai"]["recent_results"] = \
-            system_state["ai"]["recent_results"][:10]
-
-        # --- Write to Hyperledger Fabric ---
         if BLOCKCHAIN_ACTIVE:
             try:
                 feature_keys_json = json.dumps(["temperature", "vibration", "power_usage", "current_avg", "voltage_avg", "pressure"])
-                anomaly_score     = str(round(
-                    ai_result.get("anomaly_score", ai_result.get("loss", 0.0)), 6
-                ))
                 tx_result = fabric_client.submit_transaction("RecordSensorData", [
                     data.device_id,
                     "INDUSTRIAL_SENSOR",
                     tx_hash,
                     str(is_anomaly).lower(),
-                    anomaly_score,
+                    str(round(loss_val, 6)),
                     str(_ANOMALY_THRESHOLD),
                     feature_keys_json,
-                    data.timestamp,
+                    now_iso,
                 ])
                 if tx_result.get("status") not in ("success", "simulated"):
-                    print(f"Ledger write non-fatal notice: {tx_result.get('error')}")
+                    print(f"Ledger write notice: {tx_result.get('error')}")
             except Exception as exc:
-                print(f"Ledger write notice (non-fatal): {exc}")
+                print(f"Ledger write notice: {exc}")
 
-    # --- Append to history (in-memory storage) ---
-    history_record = {
-        "device":    data.device_id,
-        "hash":      tx_hash,
-        "value":     f"{data.temperature}C",
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "status":    status_label,
-        "temp":      data.temperature,
-        "vib":       data.vibration,
-        "pwr":       data.power_usage,
-        "anomaly":   is_anomaly,
-        "ai_source": ai_source,
-        "ai_error":  None,
-        "recommendation": recommendation,
-        "id":        system_state["dashboard"]["total_scans"],
+    # 4. Update in-memory fallback counters and synchronize with canonical MongoDB counts
+    system_state["dashboard"]["total_scans"] += 1
+    system_state["ai"]["total_analyses"] += 1
+    if is_anomaly:
+        system_state["dashboard"]["anomalies"] += 1
+        system_state["ai"]["anomalies_found"] += 1
+        system_state["blockchain"]["total_blocks"] += 1
+        system_state["blockchain"]["transactions"] += 1
+
+    c_stats = await get_canonical_stats(system_state)
+    system_state["dashboard"].update({
+        "active_devices": 33,
+        "total_scans": c_stats["total_scans"],
+        "anomalies": c_stats["anomalies"],
+        "normal_scans": c_stats["normal_scans"],
+        "uptime": c_stats["uptime"],
+    })
+    system_state["ai"]["total_analyses"] = c_stats["total_scans"]
+    system_state["ai"]["anomalies_found"] = c_stats["anomalies"]
+    system_state["blockchain"]["total_blocks"] = c_stats["total_blocks"]
+    system_state["blockchain"]["transactions"] = c_stats["transactions"]
+
+    # 5. Update latest_by_device
+    system_state["latest_by_device"][data.device_id] = {
+        "id": inserted_sensor_id or data.device_id,
+        "device": data.device_id,
+        "machine_name": data.machine_name or data.device_id,
+        "temp": data.temperature,
+        "vib": data.vibration,
+        "pwr": data.power_usage,
+        "pressure": data.pressure,
+        "current_avg": getattr(data, "current_avg", 0.12),
+        "voltage_avg": getattr(data, "voltage_avg", 217.5),
+        "status": "critical" if is_anomaly else "normal",
+        "status_short": description if is_anomaly else (data.status_short or "Machine operating within safe parameters"),
+        "recommendations": [recommendation],
+        "loss": loss_val,
+        "threshold": threshold_val,
+        "confidence": confidence_val,
+        "severity": severity_val,
+        "timestamp": now_iso,
     }
 
-    system_state["history"].append(history_record)
+    # 6. Broadcast to WebSocket clients with canonical MongoDB counters
+    await broadcast_data({
+        "id": inserted_sensor_id or f"{data.device_id}-{int(_time.time() * 1000)}",
+        "device_id": data.device_id,
+        "machine_name": data.machine_name or data.device_id,
+        "temperature": data.temperature,
+        "vibration": data.vibration,
+        "power_usage": data.power_usage,
+        "current_avg": getattr(data, "current_avg", 0.12),
+        "voltage_avg": getattr(data, "voltage_avg", 217.5),
+        "pressure": data.pressure,
+        "is_anomaly": is_anomaly,
+        "loss": loss_val,
+        "threshold": threshold_val,
+        "confidence": confidence_val,
+        "severity": severity_val,
+        "status": "critical" if is_anomaly else "normal",
+        "status_short": description if is_anomaly else (data.status_short or "Machine operating within safe parameters"),
+        "recommendation": recommendation,
+        "hash": tx_hash,
+        "timestamp": now_iso,
+        "total_scans": c_stats["total_scans"],
+        "anomalies": c_stats["anomalies"],
+        "normal_scans": c_stats["normal_scans"],
+        "total_blocks": c_stats["total_blocks"],
+    })
+
+    # 7. Keep bounded in-memory history list
+    system_state["history"].append({
+        "id": inserted_sensor_id or str(c_stats["total_scans"]),
+        "device": data.device_id,
+        "machine_name": data.machine_name or data.device_id,
+        "hash": tx_hash,
+        "value": f"{data.temperature}°C",
+        "timestamp": now_iso,
+        "status": "critical" if is_anomaly else "verified",
+        "temp": data.temperature,
+        "vib": data.vibration,
+        "pwr": data.power_usage,
+        "pressure": data.pressure,
+        "current_avg": getattr(data, "current_avg", 0.12),
+        "voltage_avg": getattr(data, "voltage_avg", 217.5),
+        "loss": loss_val,
+        "threshold": threshold_val,
+        "confidence": confidence_val,
+        "severity": severity_val,
+        "description": description,
+        "anomaly": 1 if is_anomaly else 0,
+        "ai_source": ai_source,
+        "recommendation": recommendation,
+    })
     if len(system_state["history"]) > 100:
         system_state["history"].pop(0)
 
     return {
-        "status":    "Processed",
-        "anomaly":   is_anomaly,
+        "status": "Processed",
+        "anomaly": is_anomaly,
+        "loss": loss_val,
+        "threshold": threshold_val,
+        "confidence": confidence_val,
+        "total_scans": c_stats["total_scans"],
+        "anomalies": c_stats["anomalies"],
         "ai_source": ai_source,
-        "ai_error":  None,
-        "tx_hash":   tx_hash if is_anomaly else None,
+        "tx_hash": tx_hash if is_anomaly else None,
     }
 
 
@@ -1124,7 +1132,14 @@ async def autonomous_feeder_loop():
             rec_idx = (rec_idx + 1) % len(records)
             dev_idx += 1
 
-            meta = format_status(device_id, rec["temperature"], rec["vibration"], rec["power_usage"])
+            meta = format_status(
+                device_id,
+                rec["temperature"],
+                rec["vibration"],
+                rec["power_usage"],
+                rec.get("pressure", 0.0),
+                rec.get("fault_type", "none"),
+            )
             sensor_obj = SensorData(
                 device_id=device_id,
                 temperature=rec["temperature"],
@@ -1141,9 +1156,12 @@ async def autonomous_feeder_loop():
             )
             result = await _execute_telemetry_pipeline(sensor_obj)
             if result.get("anomaly"):
-                print(f"[AutonomousFeeder] ANOMALY on {device_id} -> Block committed to Fabric: {result.get('tx_hash')[:16]}...")
+                print(
+                    f"[AutonomousFeeder] ANOMALY on {device_id} (conf={result.get('confidence')}%, "
+                    f"loss={result.get('loss')}) -> Block: {str(result.get('tx_hash'))[:16]}..."
+                )
             if dev_idx % 30 == 0:
-                print(f"[AutonomousFeeder] Continuous pulse | total_scans={system_state['dashboard']['total_scans']} | active_devices=33")
+                print(f"[AutonomousFeeder] Pulse | total_scans={result.get('total_scans')} | anomalies={result.get('anomalies')}")
         except asyncio.CancelledError:
             print("[AutonomousFeeder] Stopped cleanly.")
             break
@@ -1164,22 +1182,37 @@ async def process_data(request: Request, data: SensorData):
     except Exception as exc:
         import traceback
         error_msg = str(exc) if str(exc) else repr(exc)
-        traceback_str = traceback.format_exc()
-        print(f"process_data unhandled error: {error_msg}")
-        print(f"FULL TRACEBACK:\n{traceback_str}")
+        print(f"process_data unhandled error: {error_msg}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error: {error_msg or 'Unknown error'}")
 
 
-# ---------------------------------------------------------------------------
-# JWT verification (used by /submit-data)
-# ---------------------------------------------------------------------------
+@app.post("/api/data/reset", dependencies=[Depends(verify_api_key)])
+async def reset_telemetry_data():
+    """Reset sensor_data, fraud_alerts, and blockchain_blocks in MongoDB and re-seed genesis block."""
+    import database as db_mod
+    mongo_db = db_mod.db
+    if mongo_db is not None:
+        try:
+            await mongo_db["sensor_data"].delete_many({})
+            await mongo_db["fraud_alerts"].delete_many({})
+            await mongo_db["blockchain_blocks"].delete_many({})
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Failed to reset MongoDB collections: {exc}")
+
+    system_state["dashboard"].update({"total_scans": 0, "anomalies": 0, "normal_scans": 0, "uptime": 100.0})
+    system_state["ai"].update({"total_analyses": 0, "anomalies_found": 0, "recent_results": []})
+    system_state["blockchain"].update({"total_blocks": 1, "transactions": 1, "recent_blocks": []})
+    system_state["history"].clear()
+    await _setup_system_state()
+    c_stats = await get_canonical_stats(system_state)
+    return {"status": "success", "message": "All telemetry, alerts, and ledger blocks reset.", "stats": c_stats}
+
+
 def verify_token(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
     if jwt is None:
         return {"sub": "authenticated_user"}
     try:
-        payload = jwt.decode(
-            credentials.credentials, SECRET_KEY, algorithms=["HS256"]
-        )
+        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=["HS256"])
         return payload
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
@@ -1191,37 +1224,31 @@ async def submit_data(request: Request, data: dict, user=Depends(verify_token)):
     await broadcast_data(data)
     return {
         "status": "Data accepted",
-        "user":   user.get("user") or user.get("sub") or "unknown",
+        "user": user.get("user") or user.get("sub") or "unknown",
     }
 
 
-# ---------------------------------------------------------------------------
-# Storage & Export Endpoints
-# ---------------------------------------------------------------------------
 @app.get("/api/storage/status", dependencies=[Depends(verify_api_key)])
 async def get_storage_status():
-    """Get MongoDB storage usage and alert if near capacity"""
     try:
         db_size_mb = await get_database_size()
         collection_stats = await get_collection_stats()
-        
         limit_mb = 500
         threshold_mb = 450
         used_percentage = (db_size_mb / limit_mb) * 100
-        
-        # Determine status
+
         if db_size_mb >= threshold_mb:
-            status = "CRITICAL"
-            message = f"Storage nearly full! {db_size_mb:.2f}MB of {limit_mb}MB used. Export data immediately!"
+            status_str = "CRITICAL"
+            message = f"Storage nearly full! {db_size_mb:.2f}MB of {limit_mb}MB used."
         elif db_size_mb >= (threshold_mb * 0.8):
-            status = "WARNING"
-            message = f"Storage usage high: {db_size_mb:.2f}MB of {limit_mb}MB. Consider exporting soon."
+            status_str = "WARNING"
+            message = f"Storage usage high: {db_size_mb:.2f}MB of {limit_mb}MB."
         else:
-            status = "OK"
-            message = f"Storage usage low: {db_size_mb:.2f}MB of {limit_mb}MB. Proceed with data collection."
-        
+            status_str = "OK"
+            message = f"Storage usage healthy: {db_size_mb:.2f}MB of {limit_mb}MB."
+
         return {
-            "status": status,
+            "status": status_str,
             "used_mb": round(db_size_mb, 2),
             "limit_mb": limit_mb,
             "remaining_mb": round(max(0, limit_mb - db_size_mb), 2),
@@ -1230,29 +1257,16 @@ async def get_storage_status():
             "collections": collection_stats,
             "alert": db_size_mb >= threshold_mb,
             "export_recommended": db_size_mb >= (threshold_mb * 0.9),
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
     except Exception as e:
-        return {
-            "status": "ERROR",
-            "message": str(e),
-            "error": True
-        }
+        return {"status": "ERROR", "message": str(e), "error": True}
 
 
 @app.get("/api/data/export", dependencies=[Depends(verify_api_key)])
 async def export_data():
-    """Export all sensor data and fraud alerts as JSON"""
     try:
         export_data_dict = await export_all_data()
-        
-        if not export_data_dict:
-            return {
-                "status": "No data to export",
-                "sensor_data": [],
-                "fraud_alerts": []
-            }
-        
         return {
             "status": "SUCCESS",
             "export_timestamp": export_data_dict["export_timestamp"],
@@ -1260,35 +1274,22 @@ async def export_data():
             "total_alerts": export_data_dict["total_alerts"],
             "sensor_data": export_data_dict["sensor_data"],
             "fraud_alerts": export_data_dict["fraud_alerts"],
-            "export_size_mb": round(
-                len(json.dumps(export_data_dict)) / (1024 * 1024), 2
-            )
+            "export_size_mb": round(len(json.dumps(export_data_dict)) / (1024 * 1024), 2),
         }
     except Exception as e:
-        return {
-            "status": "ERROR",
-            "message": str(e),
-            "error": True
-        }
+        return {"status": "ERROR", "message": str(e), "error": True}
 
 
 @app.get("/api/statistics/summary", dependencies=[Depends(verify_api_key)])
 async def get_statistics_summary():
-    """Get data collection summary statistics"""
     try:
+        c_stats = await get_canonical_stats(system_state)
         collection_stats = await get_collection_stats()
         db_size_mb = await get_database_size()
-        
-        total_readings = collection_stats.get("sensor_data", {}).get("count", 0)
-        total_alerts = collection_stats.get("fraud_alerts", {}).get("count", 0)
-        
-        # Estimate collection period
-        if total_readings > 0:
-            # At ~1 reading per second, estimate days
-            days_of_data = total_readings / (86400)  # 86400 seconds per day
-        else:
-            days_of_data = 0
-        
+        total_readings = c_stats["total_scans"]
+        total_alerts = c_stats["anomalies"]
+        days_of_data = total_readings / 17280.0 if total_readings > 0 else 0
+
         return {
             "status": "OK",
             "summary": {
@@ -1296,24 +1297,10 @@ async def get_statistics_summary():
                 "total_anomalies_detected": total_alerts,
                 "total_storage_mb": round(db_size_mb, 2),
                 "estimated_days": round(days_of_data, 2),
-                "reading_rate": "~1 per second",
-                "collection_breakdown": {
-                    "sensor_data": {
-                        "count": collection_stats.get("sensor_data", {}).get("count", 0),
-                        "estimated_mb": collection_stats.get("sensor_data", {}).get("estimated_mb", 0)
-                    },
-                    "fraud_alerts": {
-                        "count": collection_stats.get("fraud_alerts", {}).get("count", 0),
-                        "estimated_mb": collection_stats.get("fraud_alerts", {}).get("estimated_mb", 0)
-                    }
-                }
+                "reading_rate": "1 reading / 5.0 seconds",
+                "collection_breakdown": collection_stats,
             },
-            "last_reading": collection_stats.get("total_mb", 0),
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
     except Exception as e:
-        return {
-            "status": "ERROR",
-            "message": str(e),
-            "error": True
-        }
+        return {"status": "ERROR", "message": str(e), "error": True}
