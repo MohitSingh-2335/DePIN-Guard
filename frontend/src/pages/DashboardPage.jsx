@@ -42,39 +42,39 @@ const CustomTooltip = ({ active, payload, label, timePeriod }) => {
 };
 
 const MACHINE_DIRECTORY = [
-  { id: 'Device-000', name: 'Injection Molder', type: 'Molding' },
-  { id: 'Device-001', name: 'Mixer', type: 'Processing' },
-  { id: 'Device-002', name: 'Pick & Place', type: 'Assembly' },
-  { id: 'Device-003', name: 'Vision System', type: 'Inspection' },
-  { id: 'Device-004', name: 'Shuttle System', type: 'Logistics' },
-  { id: 'Device-005', name: 'Labeler', type: 'Packaging' },
-  { id: 'Device-006', name: 'Automated Screwdriver', type: 'Assembly' },
-  { id: 'Device-007', name: 'Shrink Wrapper', type: 'Packaging' },
-  { id: 'Device-008', name: 'Laser Cutter', type: 'Fabrication' },
-  { id: 'Device-009', name: 'CMM', type: 'Metrology' },
-  { id: 'Device-010', name: 'CNC Lathe', type: 'Machining' },
-  { id: 'Device-011', name: 'Dryer', type: 'Finishing' },
-  { id: 'Device-012', name: 'Valve Controller', type: 'Fluid Control' },
-  { id: 'Device-013', name: 'Furnace', type: 'Thermal' },
-  { id: 'Device-014', name: 'Carton Former', type: 'Packaging' },
-  { id: 'Device-015', name: 'Hydraulic Press', type: 'Forming' },
-  { id: 'Device-016', name: 'Compressor', type: 'Pneumatics' },
-  { id: 'Device-017', name: 'AGV', type: 'Robotics' },
-  { id: 'Device-018', name: 'Robot Arm', type: 'Robotics' },
-  { id: 'Device-019', name: 'Conveyor Belt', type: 'Material Handling' },
-  { id: 'Device-020', name: 'Forklift', type: 'Logistics' },
-  { id: 'Device-021', name: 'Press Brake', type: 'Sheet Metal' },
-  { id: 'Device-022', name: 'Boiler', type: 'Thermal' },
-  { id: 'Device-023', name: 'Vacuum Packer', type: 'Packaging' },
-  { id: 'Device-024', name: 'XRay Inspector', type: 'Quality Control' },
-  { id: 'Device-025', name: 'Crane', type: 'Heavy Transport' },
-  { id: 'Device-026', name: '3D Printer', type: 'Additive' },
-  { id: 'Device-027', name: 'Palletizer', type: 'End of Line' },
-  { id: 'Device-028', name: 'Grinder', type: 'Surface Finish' },
-  { id: 'Device-029', name: 'CNC Mill', type: 'Machining' },
-  { id: 'Device-030', name: 'Chiller', type: 'HVAC' },
-  { id: 'Device-031', name: 'Heat Exchanger', type: 'Thermal' },
-  { id: 'Device-032', name: 'Pump', type: 'Hydraulics' },
+  { id: 'Device-000', name: 'Injection Molder', type: 'Molding', sector: 'Robotics & Assembly', line: 'Line 3' },
+  { id: 'Device-001', name: 'Mixer', type: 'Processing', sector: 'Logistics & QA', line: 'Line 4' },
+  { id: 'Device-002', name: 'Pick & Place', type: 'Assembly', sector: 'Robotics & Assembly', line: 'Line 3' },
+  { id: 'Device-003', name: 'Vision System', type: 'Inspection', sector: 'Logistics & QA', line: 'Line 4' },
+  { id: 'Device-004', name: 'Shuttle System', type: 'Logistics', sector: 'Logistics & QA', line: 'Line 4' },
+  { id: 'Device-005', name: 'Labeler', type: 'Packaging', sector: 'Logistics & QA', line: 'Line 4' },
+  { id: 'Device-006', name: 'Automated Screwdriver', type: 'Assembly', sector: 'Robotics & Assembly', line: 'Line 3' },
+  { id: 'Device-007', name: 'Shrink Wrapper', type: 'Packaging', sector: 'Logistics & QA', line: 'Line 4' },
+  { id: 'Device-008', name: 'Laser Cutter', type: 'Fabrication', sector: 'Machining & Forming', line: 'Line 1' },
+  { id: 'Device-009', name: 'CMM Metrology', type: 'Metrology', sector: 'Logistics & QA', line: 'Line 4' },
+  { id: 'Device-010', name: 'CNC Lathe', type: 'Machining', sector: 'Machining & Forming', line: 'Line 1' },
+  { id: 'Device-011', name: 'Batch Dryer', type: 'Finishing', sector: 'Thermal & Fluids', line: 'Line 2' },
+  { id: 'Device-012', name: 'Valve Controller', type: 'Fluid Control', sector: 'Thermal & Fluids', line: 'Line 2' },
+  { id: 'Device-013', name: 'Furnace', type: 'Thermal', sector: 'Thermal & Fluids', line: 'Line 2' },
+  { id: 'Device-014', name: 'Carton Former', type: 'Packaging', sector: 'Logistics & QA', line: 'Line 4' },
+  { id: 'Device-015', name: 'Hydraulic Press', type: 'Forming', sector: 'Machining & Forming', line: 'Line 1' },
+  { id: 'Device-016', name: 'Compressor', type: 'Pneumatics', sector: 'Thermal & Fluids', line: 'Line 2' },
+  { id: 'Device-017', name: 'AGV Transport', type: 'Robotics', sector: 'Robotics & Assembly', line: 'Line 3' },
+  { id: 'Device-018', name: 'Robot Arm', type: 'Robotics', sector: 'Robotics & Assembly', line: 'Line 3' },
+  { id: 'Device-019', name: 'Conveyor Belt', type: 'Material Handling', sector: 'Logistics & QA', line: 'Line 4' },
+  { id: 'Device-020', name: 'Forklift', type: 'Logistics', sector: 'Logistics & QA', line: 'Line 4' },
+  { id: 'Device-021', name: 'Press Brake', type: 'Sheet Metal', sector: 'Machining & Forming', line: 'Line 1' },
+  { id: 'Device-022', name: 'Boiler', type: 'Thermal', sector: 'Thermal & Fluids', line: 'Line 2' },
+  { id: 'Device-023', name: 'Vacuum Packer', type: 'Packaging', sector: 'Logistics & QA', line: 'Line 4' },
+  { id: 'Device-024', name: 'XRay Inspector', type: 'Quality Control', sector: 'Logistics & QA', line: 'Line 4' },
+  { id: 'Device-025', name: 'Crane', type: 'Heavy Transport', sector: 'Logistics & QA', line: 'Line 4' },
+  { id: 'Device-026', name: '3D Printer', type: 'Additive', sector: 'Robotics & Assembly', line: 'Line 3' },
+  { id: 'Device-027', name: 'Palletizer', type: 'End of Line', sector: 'Logistics & QA', line: 'Line 4' },
+  { id: 'Device-028', name: 'Grinder', type: 'Surface Finish', sector: 'Machining & Forming', line: 'Line 1' },
+  { id: 'Device-029', name: 'CNC Mill', type: 'Machining', sector: 'Machining & Forming', line: 'Line 1' },
+  { id: 'Device-030', name: 'Chiller', type: 'HVAC', sector: 'Thermal & Fluids', line: 'Line 2' },
+  { id: 'Device-031', name: 'Heat Exchanger', type: 'Thermal', sector: 'Thermal & Fluids', line: 'Line 2' },
+  { id: 'Device-032', name: 'Pump', type: 'Hydraulics', sector: 'Thermal & Fluids', line: 'Line 2' },
 ];
 
 const DashboardPage = () => {
@@ -89,6 +89,7 @@ const DashboardPage = () => {
   const [chartData, setChartData] = useState([]);
   const [showAllSensors, setShowAllSensors] = useState(false);
   const [deviceFilter, setDeviceFilter] = useState('all');
+  const [sectorFilter, setSectorFilter] = useState('all');
   const [deviceSearch, setDeviceSearch] = useState('');
   const [lastLiveTick, setLastLiveTick] = useState(null);
   const SENSOR_PREVIEW = 5;
@@ -276,11 +277,17 @@ const DashboardPage = () => {
       device_id: m.id,
       machine_name: m.name,
       type: m.type,
+      sector: m.sector,
+      line: m.line,
       status: latest ? latest.status : 'normal',
       value: hasData ? Number(latest.temp ?? latest.value ?? 0).toFixed(1) : '—',
       vib: hasData ? Number(latest.vib ?? 0).toFixed(2) : '—',
       pwr: hasData ? Number(latest.pwr ?? 0).toFixed(1) : '—',
       pressure: hasData ? Number(latest.pressure ?? 0).toFixed(1) : '—',
+      current_avg: hasData ? Number(latest.current_avg ?? 0.12).toFixed(2) : '—',
+      voltage_avg: hasData ? Number(latest.voltage_avg ?? 217.5).toFixed(1) : '—',
+      loss: latest?.loss,
+      confidence: latest?.confidence,
       unit: '°C',
       time: latest ? (latest.time || (latest.timestamp ? new Date(latest.timestamp).toLocaleTimeString() : 'Live')) : (lastLiveTick || 'Awaiting'),
       status_short: latest?.status_short || (latest?.status === 'critical' ? 'Elevated reading detected' : 'Operating within safe parameters'),
@@ -291,15 +298,19 @@ const DashboardPage = () => {
   const alertCount = fleetList.filter(m => m.status === 'critical' || m.status === 'warning').length;
 
   const filteredFleet = fleetList.filter(m => {
-    const matchesFilter =
+    const matchesStatus =
       deviceFilter === 'all' ||
       (deviceFilter === 'optimal' && m.status === 'normal') ||
       (deviceFilter === 'attention' && (m.status === 'critical' || m.status === 'warning'));
+    const matchesSector =
+      sectorFilter === 'all' ||
+      m.line.toLowerCase() === sectorFilter.toLowerCase();
     const matchesSearch =
       m.machine_name.toLowerCase().includes(deviceSearch.toLowerCase()) ||
       m.device_id.toLowerCase().includes(deviceSearch.toLowerCase()) ||
-      m.type.toLowerCase().includes(deviceSearch.toLowerCase());
-    return matchesFilter && matchesSearch;
+      m.type.toLowerCase().includes(deviceSearch.toLowerCase()) ||
+      (m.sector && m.sector.toLowerCase().includes(deviceSearch.toLowerCase()));
+    return matchesStatus && matchesSector && matchesSearch;
   });
 
   const statusPriority = { critical: 0, warning: 1, normal: 2 };
@@ -395,12 +406,12 @@ const DashboardPage = () => {
           <div className="section-header">
             <div>
               <h2 className="section-title">33-Machine Consortium Fleet Health Matrix</h2>
-              <p className="section-subtitle">Continuous multi-sensor status and AI risk assessment across all plant equipment</p>
+              <p className="section-subtitle">Continuous multi-sensor status, AI anomaly risk, and tamper-proof ledger audit across all plant assets</p>
             </div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
               <input
                 type="text"
-                placeholder="Search machine or ID..."
+                placeholder="Search machine, sector, or ID..."
                 value={deviceSearch}
                 onChange={e => setDeviceSearch(e.target.value)}
                 style={{
@@ -420,7 +431,7 @@ const DashboardPage = () => {
                   color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '0.78rem', cursor: 'pointer', fontWeight: 600
                 }}
               >
-                All (33)
+                All Status ({fleetList.length})
               </button>
               <button
                 onClick={() => setDeviceFilter('optimal')}
@@ -442,6 +453,69 @@ const DashboardPage = () => {
               </button>
             </div>
           </div>
+
+          {/* ── Fleet Context & Sector Filtering ── */}
+          <div style={{
+            background: 'rgba(255,255,255,0.02)',
+            border: '1px solid rgba(255,255,255,0.06)',
+            borderRadius: '10px',
+            padding: '12px 16px',
+            marginBottom: '1.25rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', marginRight: '4px' }}>Plant Lines:</span>
+                {[
+                  { id: 'all', label: 'All Lines', count: 33 },
+                  { id: 'Line 1', label: 'Line 1: Machining', count: 6 },
+                  { id: 'Line 2', label: 'Line 2: Thermal & Fluids', count: 8 },
+                  { id: 'Line 3', label: 'Line 3: Robotics', count: 6 },
+                  { id: 'Line 4', label: 'Line 4: Logistics & QA', count: 13 },
+                ].map(sec => (
+                  <button
+                    key={sec.id}
+                    onClick={() => setSectorFilter(sec.id)}
+                    style={{
+                      background: sectorFilter === sec.id ? 'rgba(14,165,233,0.2)' : 'rgba(255,255,255,0.04)',
+                      color: sectorFilter === sec.id ? '#38bdf8' : '#cbd5e1',
+                      border: sectorFilter === sec.id ? '1px solid rgba(14,165,233,0.4)' : '1px solid rgba(255,255,255,0.08)',
+                      borderRadius: '6px',
+                      padding: '4px 10px',
+                      fontSize: '0.74rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    {sec.label} ({sec.count})
+                  </button>
+                ))}
+              </div>
+
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Active Filter View: <strong style={{ color: '#f1f5f9' }}>{filteredFleet.length}</strong> / 33 Machines</span>
+              </div>
+            </div>
+
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '8px',
+              paddingTop: '8px',
+              borderTop: '1px solid rgba(255,255,255,0.05)',
+              fontSize: '0.72rem',
+              color: '#94a3b8'
+            }}>
+              <div><strong style={{ color: '#cbd5e1' }}>Multi-Sensor Fusion:</strong> 6 channels (Temp, Vib, Pwr, Pressure, Curr, Volt)</div>
+              <div><strong style={{ color: '#cbd5e1' }}>Edge AI Scoring:</strong> PyTorch LSTM reconstruction MSE vs 0.163 threshold</div>
+              <div><strong style={{ color: '#cbd5e1' }}>Topology Check:</strong> DeviceGCN inter-machine cascade correlation</div>
+              <div><strong style={{ color: '#cbd5e1' }}>Consortium Ledger:</strong> SHA-256 state hashes committed to Fabric</div>
+            </div>
+          </div>
+
           <div className="iot-devices-section">
             {sortedFleet.length === 0 ? (
               <p className="loading-text">No machines match the filter.</p>
@@ -451,12 +525,18 @@ const DashboardPage = () => {
                   key={data.device_id}
                   device_id={data.device_id}
                   machine_name={`${data.machine_name} (${data.type})`}
+                  sector={data.sector}
+                  line={data.line}
                   alert_level={data.status || 'normal'}
                   status_short={data.status_short}
                   temperature={Number(data.value)}
                   vibration={Number(data.vib)}
                   power_usage={Number(data.pwr)}
                   pressure={Number(data.pressure || 0)}
+                  current_avg={Number(data.current_avg || 0.12)}
+                  voltage_avg={Number(data.voltage_avg || 217.5)}
+                  loss={data.loss}
+                  confidence={data.confidence}
                   recommendations={
                     data.status === 'critical'
                       ? ['Stop machine immediately and alert maintenance team', 'Check cooling system and ventilation', 'Do not restart until temperature drops below safe limits']
