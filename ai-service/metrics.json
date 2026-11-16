@@ -1,11 +1,11 @@
 {
   "model_name": "PyTorch 6-Channel Temporal LSTM Autoencoder",
-  "threshold": 0.205906,
-  "accuracy": 79.77,
-  "lstm_accuracy": 79.77,
-  "precision": 57.66,
-  "recall": 21.5,
-  "f1_score": 31.32,
+  "threshold": 0.163046,
+  "accuracy": 78.72,
+  "lstm_accuracy": 78.72,
+  "precision": 51.16,
+  "recall": 17.96,
+  "f1_score": 26.59,
   "epochs": 30,
   "input_features": [
     "temperature",
@@ -15,12 +15,12 @@
     "voltage_avg",
     "pressure"
   ],
-  "updated_at": "2026-11-16 09:02:58",
+  "updated_at": "2026-11-16 10:08:29",
   "gnn_model_name": "PyTorch DeviceGCN Graph Neural Network",
-  "gnn_accuracy": 89.44,
-  "gnn_precision": 86.98,
-  "gnn_recall": 59.51,
-  "gnn_f1": 70.67,
+  "gnn_accuracy": 89.52,
+  "gnn_precision": 85.93,
+  "gnn_recall": 61.0,
+  "gnn_f1": 71.35,
   "gnn_tested_nodes": 3465,
-  "gnn_updated_at": "2026-11-16 09:04:14"
+  "gnn_updated_at": "2026-11-16 10:08:55"
 }
