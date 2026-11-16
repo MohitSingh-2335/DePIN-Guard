@@ -145,6 +145,26 @@ async def _hydrate_system_state():
     
     try:
         if mongo_db is not None and mongodb_client is not None:
+            # Purge legacy corrupted/bad Atlas records
+            try:
+                await mongo_db["sensor_data"].delete_many({
+                    "$or": [
+                        {"confidence": {"$in": [95.0, 96.5, 92.0]}},
+                        {
+                            "is_anomaly": True,
+                            "temperature": {"$gte": 20.5, "$lte": 25.0},
+                            "vibration": {"$gte": 0.0, "$lte": 3.10},
+                            "power_usage": {"$gte": 0.0, "$lte": 4.90},
+                            "pressure": {"$gte": 30.0, "$lte": 185.0}
+                        }
+                    ]
+                })
+                await mongo_db["fraud_alerts"].delete_many({
+                    "confidence": {"$in": [95.0, 96.5, 92.0]}
+                })
+            except Exception as purge_err:
+                print(f"[SystemState] Legacy cleanup notice: {purge_err}")
+
             total_scans = await mongo_db["sensor_data"].count_documents({})
             anom_count = await mongo_db["sensor_data"].count_documents({"$or": [{"is_anomaly": True}, {"status": "critical"}]})
             devices = await mongo_db["sensor_data"].distinct("device_id")
@@ -173,8 +193,12 @@ async def _hydrate_system_state():
                     "hash": "0000000000000000000000000000000000000000000000000000000000000000",
                     "prev_hash": "0",
                     "merkle_root": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-                    "timestamp": "2026-01-01 00:00:00",
+                    "timestamp": "2026-01-01 00:00:00 UTC",
+                    "device_id": "Fleet-Genesis",
+                    "anomaly_score": 0.0,
+                    "orgMSP": "OrdererMSP",
                     "transactions": 1,
+                    "tx_count": 1,
                     "status": "confirmed",
                     "validator": "Consortium-Genesis-Authority"
                 }
@@ -205,7 +229,7 @@ async def _setup_system_state():
                 rec = records[dev_idx % len(records)] if records else {
                     "temperature": 22.5,
                     "vibration": 1.2,
-                    "power_usage": 18.0,
+                    "power_usage": 2.89,
                     "current_avg": 0.12,
                     "voltage_avg": 217.5,
                     "pressure": 100.0,
@@ -213,13 +237,16 @@ async def _setup_system_state():
                 system_state["latest_by_device"][dev_id] = {
                     "id": dev_id,
                     "device": dev_id,
+                    "machine_name": f"Factory Machine #{dev_idx + 1}",
                     "temp": rec.get("temperature", 22.5),
                     "vib": rec.get("vibration", 1.2),
-                    "pwr": rec.get("power_usage", 18.0),
+                    "pwr": rec.get("power_usage", 2.89),
                     "pressure": rec.get("pressure", 100.0),
                     "current_avg": rec.get("current_avg", 0.12),
                     "voltage_avg": rec.get("voltage_avg", 217.5),
                     "status": "normal",
+                    "status_short": "Machine operating within safe parameters",
+                    "recommendations": ["Continue standard operation"],
                     "loss": 0.05,
                     "threshold": _ANOMALY_THRESHOLD,
                     "confidence": 85.0,
@@ -667,6 +694,10 @@ async def get_history():
         raise HTTPException(status_code=503, detail="MongoDB not available")
     
     try:
+        total_scans = await mongo_db["sensor_data"].count_documents({})
+        total_anomalies = await mongo_db["sensor_data"].count_documents({"$or": [{"is_anomaly": True}, {"status": "critical"}]})
+        total_normal = max(0, total_scans - total_anomalies)
+
         raw_history = await mongo_db["sensor_data"].find({}).sort("timestamp", -1).limit(100).to_list(length=100)
         
         history = []
@@ -693,7 +724,7 @@ async def get_history():
             if conf_val is None or float(conf_val) == 0.0:
                 if is_anom:
                     ratio_v = loss_val / thresh_val if thresh_val > 0 else 1.2
-                    conf_val = 50.0 + 49.5 * (1.0 - math.exp(-0.65 * max(0.0, ratio_v - 1.0)))
+                    conf_val = 54.0 + 45.4 * (1.0 - math.exp(-0.75 * max(0.05, ratio_v - 1.0)))
                 else:
                     conf_val = 85.0
             conf_float = float(conf_val)
@@ -703,6 +734,8 @@ async def get_history():
             transformed = {
                 "id": doc_id,
                 "device": dev_id,
+                "machine_name": doc.get("machine_name") or dev_id,
+                "status_short": doc.get("status_short") or ("Operating normally" if not is_anom else "Abnormal reading detected"),
                 "hash": raw_hash,
                 "value": f"{doc.get('temperature', 0)}°C",
                 "timestamp": ts,
@@ -728,6 +761,9 @@ async def get_history():
         
         return {
             "history": history,
+            "total_scans": total_scans,
+            "total_anomalies": total_anomalies,
+            "total_normal": total_normal,
             "count": len(history),
             "source": "mongodb",
         }
@@ -745,7 +781,11 @@ async def get_all_history():
         raise HTTPException(status_code=503, detail="MongoDB not available")
     
     try:
-        raw_history = await mongo_db["sensor_data"].find({}).sort("timestamp", -1).limit(500).to_list(length=500)
+        total_scans = await mongo_db["sensor_data"].count_documents({})
+        total_anomalies = await mongo_db["sensor_data"].count_documents({"$or": [{"is_anomaly": True}, {"status": "critical"}]})
+        total_normal = max(0, total_scans - total_anomalies)
+
+        raw_history = await mongo_db["sensor_data"].find({}).sort("timestamp", -1).limit(200).to_list(length=200)
         
         history = []
         for idx, doc in enumerate(raw_history):
@@ -771,7 +811,7 @@ async def get_all_history():
             if conf_val is None or float(conf_val) == 0.0:
                 if is_anom:
                     ratio_v = loss_val / thresh_val if thresh_val > 0 else 1.2
-                    conf_val = 50.0 + 49.5 * (1.0 - math.exp(-0.65 * max(0.0, ratio_v - 1.0)))
+                    conf_val = 54.0 + 45.4 * (1.0 - math.exp(-0.75 * max(0.05, ratio_v - 1.0)))
                 else:
                     conf_val = 85.0
             conf_float = float(conf_val)
@@ -781,6 +821,8 @@ async def get_all_history():
             transformed = {
                 "id": doc_id,
                 "device": dev_id,
+                "machine_name": doc.get("machine_name") or dev_id,
+                "status_short": doc.get("status_short") or ("Operating normally" if not is_anom else "Abnormal reading detected"),
                 "hash": raw_hash,
                 "value": f"{doc.get('temperature', 0)}°C",
                 "timestamp": ts,
@@ -806,6 +848,9 @@ async def get_all_history():
         
         return {
             "history": history,
+            "total_scans": total_scans,
+            "total_anomalies": total_anomalies,
+            "total_normal": total_normal,
             "count": len(history),
             "source": "mongodb",
         }
@@ -838,6 +883,7 @@ async def _execute_telemetry_pipeline(data: SensorData) -> dict:
     system_state["latest_by_device"][data.device_id] = {
         "id": data.device_id,
         "device": data.device_id,
+        "machine_name": data.machine_name or data.device_id,
         "temp": data.temperature,
         "vib": data.vibration,
         "pwr": data.power_usage,
@@ -845,6 +891,8 @@ async def _execute_telemetry_pipeline(data: SensorData) -> dict:
         "current_avg": getattr(data, "current_avg", 0.12),
         "voltage_avg": getattr(data, "voltage_avg", 217.5),
         "status": "critical" if is_anomaly else "normal",
+        "status_short": data.status_short or ("Operating normally" if not is_anomaly else "Abnormal reading detected"),
+        "recommendations": data.recommendations if data.recommendations else (["Inspect equipment"] if is_anomaly else ["Continue standard operation"]),
         "loss": loss_val,
         "threshold": threshold_val,
         "confidence": confidence_val,
@@ -869,6 +917,8 @@ async def _execute_telemetry_pipeline(data: SensorData) -> dict:
         severity=severity_val,
         description=description,
         recommendation=recommendation,
+        machine_name=data.machine_name or data.device_id,
+        status_short=data.status_short or ("Operating normally" if not is_anomaly else "Abnormal reading detected"),
     )
     await save_sensor_data(sensor_doc)
 
@@ -947,10 +997,14 @@ async def _execute_telemetry_pipeline(data: SensorData) -> dict:
             "hash":      tx_hash,
             "prev_hash": previous_hash,
             "merkle_root": hashlib.sha256(f"{data.device_id}:{tx_hash}".encode()).hexdigest(),
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "device_id": data.device_id,
+            "anomaly_score": round(loss_val, 4),
+            "orgMSP":    "ManufacturerMSP",
+            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
             "status":    "confirmed",
             "validator": "Consortium-Raft-Node-1",
             "transactions": 1,
+            "tx_count": 1,
         }
         system_state["blockchain"]["recent_blocks"].insert(0, block_record)
         system_state["blockchain"]["recent_blocks"] = \
