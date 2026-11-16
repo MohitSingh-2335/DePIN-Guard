@@ -243,3 +243,39 @@ async def update_profile(update_data: ProfileUpdate, credentials: HTTPAuthorizat
             db_user.update(updates)
 
     return {"message": "Profile updated successfully"}
+
+
+class ChangePassword(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.post("/change-password")
+@router.post("/api/change-password")
+async def change_password(data: ChangePassword, credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
+    email = verify_jwt_token(credentials.credentials)
+    if len(data.new_password) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
+
+    mongo_db = db_module.db
+    if mongo_db is not None:
+        db_user = await mongo_db["users"].find_one({"email": email})
+    else:
+        db_user = fallback_users.get(email)
+
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    raw_hash = db_user.get("password_hash", "")
+    if isinstance(raw_hash, bytes):
+        raw_hash = raw_hash.decode("utf-8", errors="ignore")
+    if not verify_password(data.current_password, raw_hash):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+    new_hash = hash_password(data.new_password)
+    if mongo_db is not None:
+        await mongo_db["users"].update_one({"_id": db_user["_id"]}, {"$set": {"password_hash": new_hash}})
+    else:
+        db_user["password_hash"] = new_hash
+
+    return {"status": "success", "message": "Password updated successfully"}
