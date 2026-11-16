@@ -392,29 +392,34 @@
 /* ================================
    IOT DEVICES SECTION (Scrollable Fleet Matrix)
 ================================ */
+.dashboard-grid-cards,
 .iot-devices-section {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 1rem;
-  max-height: 560px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.25rem;
+  max-height: 540px;
   overflow-y: auto;
-  padding-right: 6px;
+  padding-right: 0.5rem;
 }
 
+.dashboard-grid-cards::-webkit-scrollbar,
 .iot-devices-section::-webkit-scrollbar {
   width: 6px;
 }
 
+.dashboard-grid-cards::-webkit-scrollbar-track,
 .iot-devices-section::-webkit-scrollbar-track {
   background: rgba(255, 255, 255, 0.02);
   border-radius: 4px;
 }
 
+.dashboard-grid-cards::-webkit-scrollbar-thumb,
 .iot-devices-section::-webkit-scrollbar-thumb {
   background: rgba(14, 165, 233, 0.25);
   border-radius: 4px;
 }
 
+.dashboard-grid-cards::-webkit-scrollbar-thumb:hover,
 .iot-devices-section::-webkit-scrollbar-thumb:hover {
   background: rgba(14, 165, 233, 0.45);
 }
