@@ -1,69 +1,54 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Layout from '../components/layout/Layout';
-import { authenticatedFetch } from '../utils/api';
+import { authenticatedFetch, getRefreshIntervalMs, formatUtcTimestamp } from '../utils/api';
 import './BlockchainPage.css';
 
 const BlockchainPage = () => {
   const [blocks, setBlocks] = useState([]);
-  const [stats, setStats] = useState({ 
-    totalBlocks: 0, 
-    transactions: 0,
-    networkStatus: 'Offline' // Naya dynamic field
+  const [stats, setStats] = useState({
+    totalBlocks: 1,
+    transactions: 1,
+    anomaliesAnchored: 0,
+    networkStatus: 'Active',
   });
   const [selectedBlock, setSelectedBlock] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchBlockchainData = async () => {
+  const fetchBlockchainData = useCallback(async () => {
     try {
       const res = await authenticatedFetch('/api/blockchain');
-      if (!res) {
-        console.warn('[Blockchain] No response from API');
-        return;
-      }
-      
-      if (!res.ok) {
-        console.error(`[Blockchain] API error ${res.status}:`, res.statusText);
-        return;
-      }
+      if (!res || !res.ok) return;
 
       const data = await res.json();
-      if (!data) {
-        console.warn('[Blockchain] Empty response data');
-        return;
-      }
+      if (!data) return;
 
-      // 1. Stats update (Backend key mapping)
       setStats({
-        totalBlocks:  data.total_blocks  ?? 0,
-        transactions: data.transactions  ?? 0,
-        networkStatus: data.net_status   ?? 'Stable',
+        totalBlocks: Number(data.total_blocks ?? 1),
+        transactions: Number(data.transactions ?? 1),
+        anomaliesAnchored: Number(data.anomalies_anchored ?? 0),
+        networkStatus: data.net_status ?? 'Active',
       });
 
-      // 2. Blocks list update
-      if (data.recent_blocks && Array.isArray(data.recent_blocks) && data.recent_blocks.length > 0) {
-        setBlocks(prev => {
-          const existingHashes = new Set(prev.map(b => b.hash || b.id));
-          const newBlocks = data.recent_blocks.filter(b => !existingHashes.has(b.hash || b.id));
-          
-          return [...newBlocks, ...prev].slice(0, 50);
-        });
+      if (data.recent_blocks && Array.isArray(data.recent_blocks)) {
+        setBlocks(data.recent_blocks);
       }
     } catch (error) {
       console.error('[Blockchain] Fetch failed:', error.message);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchBlockchainData();
-    const interval = setInterval(fetchBlockchainData, 6000);
+    const intervalMs = getRefreshIntervalMs(6000);
+    if (!intervalMs) return undefined;
+    const interval = setInterval(fetchBlockchainData, intervalMs);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchBlockchainData]);
 
-  // UI Helper: Backend se aane wale status ke mutabik color change karega
   const getStatusClass = (status) => {
-    const s = status?.toLowerCase() || 'pending';
+    const s = status?.toLowerCase() || 'confirmed';
     if (s === 'confirmed' || s === 'success') return 'status-confirmed';
     if (s === 'pending' || s === 'mempool') return 'status-pending';
     return 'status-error';
@@ -74,11 +59,11 @@ const BlockchainPage = () => {
       <div className="blockchain-container">
         <div className="page-header">
           <div>
-            <h1 className="page-title">Blockchain Explorer</h1>
-            <p className="page-subtitle">Real-time network throughput and block data</p>
+            <h1 className="page-title">Blockchain Consortium Ledger Explorer</h1>
+            <p className="page-subtitle">Immutable SHA-256 anomaly anchoring and transaction throughput synced with MongoDB</p>
           </div>
           <button className="sync-button" onClick={fetchBlockchainData}>
-            <svg viewBox="0 0 20 20" fill="currentColor" width="16" style={{marginRight: '8px'}}>
+            <svg viewBox="0 0 20 20" fill="currentColor" width="16" style={{ marginRight: '8px' }}>
               <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
             </svg>
             Sync Network
@@ -88,20 +73,20 @@ const BlockchainPage = () => {
         {/* Dynamic Stats Section */}
         <div className="blockchain-stats-grid">
           <div className="stat-card-blockchain">
-            <div className="stat-label-blockchain">Total Blocks</div>
+            <div className="stat-label-blockchain">Total Committed Blocks</div>
             <div className="stat-value-blockchain">
               {loading ? '...' : stats.totalBlocks.toLocaleString()}
             </div>
           </div>
           <div className="stat-card-blockchain">
-            <div className="stat-label-blockchain">Transactions</div>
+            <div className="stat-label-blockchain">Anchored Transactions</div>
             <div className="stat-value-blockchain">
               {loading ? '...' : stats.transactions.toLocaleString()}
             </div>
           </div>
           <div className="stat-card-blockchain">
-            <div className="stat-label-blockchain">Network Health</div>
-            <div className="stat-value-blockchain" style={{color: '#22c55e'}}>
+            <div className="stat-label-blockchain">Ledger Health</div>
+            <div className="stat-value-blockchain" style={{ color: '#22c55e' }}>
               {loading ? '...' : stats.networkStatus}
             </div>
           </div>
@@ -112,21 +97,21 @@ const BlockchainPage = () => {
           {loading && blocks.length === 0 ? (
             <div className="loader-container">
               <div className="spinner"></div>
-              <p>Fetching latest blocks...</p>
+              <p>Fetching latest blocks from MongoDB ledger...</p>
             </div>
           ) : blocks.length === 0 ? (
             <p className="empty-state">No blocks found on the network.</p>
           ) : (
             <div className="blocks-list">
-              {blocks.map((block) => (
-                <div key={block.hash || block.id} className="block-card">
+              {blocks.map((block, idx) => (
+                <div key={block.hash || block.id || idx} className="block-card">
                   <div className="block-header">
-                    <div className="block-height">Block #{block.id}</div>
+                    <div className="block-height">Block #{block.index ?? block.id ?? idx}</div>
                     <span className={`block-status ${getStatusClass(block.status)}`}>
-                      {block.status || 'Verified'}
+                      {block.status || 'Confirmed'}
                     </span>
                   </div>
-                  
+
                   <div className="block-info-grid">
                     <div className="info-item">
                       <div className="info-label">Current Hash</div>
@@ -142,11 +127,11 @@ const BlockchainPage = () => {
                     </div>
                     <div className="info-item">
                       <div className="info-label">Timestamp</div>
-                      <div className="info-value">{block.timestamp}</div>
+                      <div className="info-value">{formatUtcTimestamp(block.timestamp)}</div>
                     </div>
                     <div className="info-item">
-                      <div className="info-label">Validator</div>
-                      <div className="info-value">{block.validator || 'Node-01'}</div>
+                      <div className="info-label">Target Node / Validator</div>
+                      <div className="info-value">{block.device_id || block.validator || 'Consortium-Orderer'}</div>
                     </div>
                   </div>
 
@@ -167,7 +152,7 @@ const BlockchainPage = () => {
           <div className="modal-overlay" onClick={() => setSelectedBlock(null)}>
             <div className="modal-content" onClick={e => e.stopPropagation()}>
               <div className="modal-header">
-                <h2>Block Analysis — #{selectedBlock.id}</h2>
+                <h2>Block Analysis — #{selectedBlock.index ?? selectedBlock.id}</h2>
                 <button className="close-btn" onClick={() => setSelectedBlock(null)}>×</button>
               </div>
               <div className="modal-body">
@@ -201,7 +186,7 @@ const BlockchainPage = () => {
                 </div>
                 <div className="detail-row">
                   <span className="detail-key">Timestamp:</span>
-                  <span className="detail-val">{selectedBlock.timestamp}</span>
+                  <span className="detail-val">{formatUtcTimestamp(selectedBlock.timestamp)}</span>
                 </div>
                 <div className="detail-row">
                   <span className="detail-key">Transactions:</span>
