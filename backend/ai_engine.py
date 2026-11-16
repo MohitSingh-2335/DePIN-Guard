@@ -144,7 +144,7 @@ class AnomalyDetector:
         return {
             "device_id": device_id,
             "is_anomaly": is_anomaly,
-            "loss": combined_loss,
+            "loss": loss,
             "threshold": round(self.threshold, 6),
             "severity": severity,
             "confidence": confidence,
