@@ -5,6 +5,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+# Limit PyTorch CPU threads to minimize RAM and CPU spikes on free-tier containers
+torch.set_num_threads(1)
+
 
 def resolve_ai_service_dir() -> str:
     candidates = [
@@ -98,44 +101,43 @@ class AnomalyDetector:
             step_loss = torch.mean((tensor_seq[:, -1, :] - reconstruction[:, -1, :]) ** 2).item()
 
         # Check deviations outside nominal training bounds [0.0, 1.0]
-        devs = np.maximum(0.0, np.maximum(-scaled_reading, scaled_reading - 1.0))
-        max_dev = float(np.max(devs))
-        combined_loss = round(step_loss + (max_dev * self.threshold * 2.0), 6)
+        over_max = np.maximum(0.0, scaled_reading - 1.0)
+        under_min = np.maximum(0.0, 0.0 - scaled_reading)
+        bound_dev = float(np.max(np.maximum(over_max, under_min)))
+        loss = round(step_loss + (bound_dev * self.threshold * 1.5), 6)
+        is_anomaly = bool(loss > self.threshold)
 
-        is_anomaly = bool((combined_loss > self.threshold) or (max_dev > 0.0))
-
+        ratio = loss / max(self.threshold, 1e-6)
         if is_anomaly:
-            ratio = combined_loss / self.threshold if self.threshold > 0 else 1.5
-            raw_conf = 50.0 + 49.5 * (1.0 - np.exp(-0.65 * max(0.0, ratio - 1.0)))
-            confidence = round(float(raw_conf), 2)
+            raw_conf = 54.0 + 45.4 * (1.0 - float(np.exp(-0.75 * max(0.05, ratio - 1.0))))
+            confidence = round(min(99.4, max(55.0, raw_conf)), 1)
+            severity = "critical" if ratio >= 2.0 else ("high" if ratio >= 1.35 else "medium")
 
-            if ratio >= 2.0 or max_dev >= 0.5:
-                severity = "critical"
-            elif ratio >= 1.3 or max_dev > 0.0:
-                severity = "high"
+            # Dynamic description and recommendation identifying exact channel
+            if pressure < 30.0 and pressure > 0.0:
+                description = f"Hydraulic pressure dropped to {pressure:.1f} bar (Emergency Stop state) | LSTM MSE: {loss:.4f} > {self.threshold:.4f}"
+                recommendation = "Emergency stop sequence activated. Clear hydraulic loop and reset pressure valves."
+            elif vibration > 3.08:
+                description = f"Vibration level shift ({vibration:.2f} mm/s > 3.08 mm/s max) | LSTM MSE: {loss:.4f} > {self.threshold:.4f}"
+                recommendation = "Excessive mechanical vibration detected. Inspect bearings, mounts, and rotor alignment."
+            elif temperature < 20.9 or temperature > 24.9:
+                description = f"Temperature excursion ({temperature:.1f} °C outside normal 20.9-24.9 °C) | LSTM MSE: {loss:.4f} > {self.threshold:.4f}"
+                recommendation = "Thermal boundary violation. Check cooling fluid circulation and ventilation."
+            elif power_usage > 4.85:
+                description = f"Power consumption surge ({power_usage:.2f} kW > 4.85 kW nominal) | LSTM MSE: {loss:.4f} > {self.threshold:.4f}"
+                recommendation = "Electrical load overload. Verify motor phases and drive inverter."
             else:
-                severity = "medium"
-
-            # Identify primary deviating channels
-            deviating = []
-            if max_dev > 0.0:
-                for idx, dev_val in enumerate(devs):
-                    if dev_val > 0.0:
+                deviating = []
+                for idx, d_val in enumerate(np.maximum(over_max, under_min)):
+                    if d_val > 0.0:
                         deviating.append(self.channel_names[idx])
-            if not deviating:
-                # Use channel-level reconstruction error
-                with torch.no_grad():
-                    channel_errs = ((tensor_seq[0, -1, :] - reconstruction[0, -1, :]) ** 2).numpy()
-                top_idx = int(np.argmax(channel_errs))
-                deviating.append(self.channel_names[top_idx])
-
-            ch_str = ", ".join(deviating)
-            description = f"Physical anomaly detected on {device_id} ({ch_str} exceeding nominal baseline)."
-            recommendation = f"Inspect machine calibration and physical mechanical load on {ch_str}."
+                ch_str = ", ".join(deviating) if deviating else "temporal pattern"
+                description = f"Reconstruction anomaly on {device_id} ({ch_str}) | LSTM MSE: {loss:.4f} > {self.threshold:.4f}"
+                recommendation = f"Inspect machine calibration and mechanical sensor load on {ch_str}."
         else:
+            raw_conf = 99.0 - 35.0 * min(1.0, ratio)
+            confidence = round(min(99.2, max(62.0, raw_conf)), 1)
             severity = "low"
-            ratio = combined_loss / self.threshold if self.threshold > 0 else 0.5
-            confidence = round(float(max(60.0, min(99.0, (1.0 - ratio) * 100.0))), 2)
             description = f"Nominal baseline operation on {device_id}."
             recommendation = "Machine operating within safe nominal parameters."
 
