@@ -29,19 +29,25 @@ export default function FraudReport() {
 
   useEffect(() => {
     fetchAlerts(true);
-    const interval = setInterval(() => fetchAlerts(false), 5000);
+    const interval = setInterval(() => fetchAlerts(false), 6000);
     return () => clearInterval(interval);
   }, [fetchAlerts]);
 
+  const getConfidenceRatio = (confidence) => {
+    let c = parseFloat(confidence || 0);
+    if (c > 1.0) c = c / 100.0;
+    return c;
+  };
+
   const getConfidenceColor = (confidence) => {
-    const c = parseFloat(confidence);
+    const c = getConfidenceRatio(confidence);
     if (c > 0.8) return '#ef4444';
     if (c > 0.6) return '#f59e0b';
     return '#22c55e';
   };
 
   const getSeverity = (confidence) => {
-    const c = parseFloat(confidence);
+    const c = getConfidenceRatio(confidence);
     if (c > 0.8) return 'high';
     if (c > 0.6) return 'medium';
     return 'low';
@@ -56,15 +62,16 @@ export default function FraudReport() {
   };
 
   const filtered = alerts.filter(a => {
+    const ratio = getConfidenceRatio(a.confidence);
     if (filter === 'resolved')   return resolved.has(a.id);
     if (filter === 'pending')    return !resolved.has(a.id);
-    if (filter === 'high')       return getSeverity(a.confidence) === 'high';
-    if (filter === 'medium')     return getSeverity(a.confidence) === 'medium';
-    if (filter === 'low')        return getSeverity(a.confidence) === 'low';
+    if (filter === 'high')       return ratio > 0.8;
+    if (filter === 'medium')     return ratio > 0.6 && ratio <= 0.8;
+    if (filter === 'low')        return ratio <= 0.6;
     return true;
   });
 
-  const criticalCount  = alerts.filter(a => parseFloat(a.confidence) > 0.8).length;
+  const criticalCount  = alerts.filter(a => getConfidenceRatio(a.confidence) > 0.8).length;
   const resolvedCount  = resolved.size;
   const pendingCount   = alerts.length - resolvedCount;
 
@@ -168,13 +175,15 @@ export default function FraudReport() {
                   </thead>
                   <tbody>
                     {filtered.map((alert, i) => {
-                      const confValue  = parseFloat(alert.confidence || 0);
+                      const rawConf    = parseFloat(alert.confidence || 0);
+                      const confRatio  = rawConf > 1.0 ? rawConf / 100.0 : rawConf;
+                      const confPercent = (confRatio * 100.0).toFixed(1);
                       const isResolved = resolved.has(alert.id);
                       return (
                         <tr
                           key={alert.id || i}
                           className={`
-                            ${confValue > 0.8 ? 'row-high' : ''}
+                            ${confRatio > 0.8 ? 'row-high' : ''}
                             ${isResolved ? 'row-resolved' : ''}
                           `}
                         >
@@ -192,22 +201,22 @@ export default function FraudReport() {
                                 <div
                                   className="conf-bar-fill"
                                   style={{
-                                    width: `${confValue * 100}%`,
-                                    background: getConfidenceColor(confValue),
+                                    width: `${confRatio * 100}%`,
+                                    background: getConfidenceColor(confRatio),
                                   }}
                                 />
                               </div>
-                              <span style={{ color: getConfidenceColor(confValue) }}>
-                                {(confValue * 100).toFixed(1)}%
+                              <span style={{ color: getConfidenceColor(confRatio) }}>
+                                {confPercent}%
                               </span>
                             </div>
                           </td>
                           <td className="timestamp">{alert.timestamp}</td>
                           <td>
                             <span
-                              className={`risk-badge risk-${getSeverity(confValue)}`}
+                              className={`risk-badge risk-${getSeverity(confRatio)}`}
                             >
-                              {getSeverity(confValue).toUpperCase()}
+                              {getSeverity(confRatio).toUpperCase()}
                             </span>
                           </td>
                           <td>
