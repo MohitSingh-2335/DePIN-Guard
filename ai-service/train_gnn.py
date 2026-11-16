@@ -25,7 +25,7 @@ LR = 0.01
 def load_factory_graph_snapshots():
     """
     Constructs graph snapshots for the 33 factory devices across real timestamps.
-    Returns: list of (X, y) where X is (33, 4) and y is (33,)
+    Returns: list of (X, y) where X is (33, 6) and y is (33,)
     """
     print(f"Loading sensor dataset: {DATA_SENSORS}")
     df_sensors = pd.read_csv(DATA_SENSORS)
@@ -42,12 +42,19 @@ def load_factory_graph_snapshots():
 
     scaler = joblib.load(SCALER_PATH)
 
-    # 4 core physical channels
+    current_cols = [c for c in ["Current_1", "Current_2", "Current_3"] if c in pivoted.columns]
+    curr_vals = pivoted[current_cols].mean(axis=1).values if current_cols else np.full(len(pivoted), 0.12)
+
+    voltage_cols = [c for c in ["Phase_1_Voltage", "Phase_2_Voltage", "Phase_3_Voltage"] if c in pivoted.columns]
+    volt_vals = pivoted[voltage_cols].mean(axis=1).values if voltage_cols else np.full(len(pivoted), 217.5)
+
+    emergency_stop = df_plc["emergency_stop"].astype(bool).values if "emergency_stop" in df_plc.columns else np.zeros(len(pivoted), dtype=bool)
+    anom_vals = ((pivoted["is_anomaly"].values == 1) | emergency_stop).astype(int)
+
     temp_vals = pivoted["Temperature"].values
     vib_vals = pivoted["Vibration"].values
     pwr_vals = (pivoted["Energy_Consumption"] * 10.0).values
     press_vals = df_plc["hydraulic_pressure"].values
-    anom_vals = pivoted["is_anomaly"].values
 
     total_steps = len(pivoted)
     snapshots_X = []
@@ -63,6 +70,8 @@ def load_factory_graph_snapshots():
                 temp_vals[idx],
                 vib_vals[idx],
                 pwr_vals[idx],
+                curr_vals[idx],
+                volt_vals[idx],
                 press_vals[idx]
             ])
             node_labels.append(int(anom_vals[idx]))
@@ -89,7 +98,7 @@ def train_gnn():
 
     adj_norm = build_factory_adjacency_matrix(NUM_DEVICES)
 
-    model = DeviceGCN(in_features=4, hidden_dim=16, num_classes=2)
+    model = DeviceGCN(in_features=6, hidden_dim=16, num_classes=2)
     optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=1e-4)
 
     print(f"\nTraining DeviceGCN for {EPOCHS} epochs...")
